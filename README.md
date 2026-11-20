@@ -6,7 +6,7 @@ Review a Reddit post as a flat stream of comments, newest first, with each comme
 
 The install link displays JavaScript source until your userscript extension handles it. For a file you can save on iPhone or iPad, use the ZIP download.
 
-The script rearranges **Reddit's existing comment elements in place**. Comment bodies, media, votes, reply forms, menus, and moderation controls stay attached to their original comments. Draft text and event handlers survive the move. The **Comment stream** button sits beside the post's comment sorting controls, or directly below the post on layouts without those controls.
+Version **1.2.0** restores the **separate JSON reader**. It collects available comments without expanding or rearranging Reddit's native comment tree, then displays 50 comments per page. The **Comment stream** button stays in the post's comment controls, or directly below the post on layouts without those controls. Use each comment's **…** menu for context or to open its native Reddit page for replies, voting, and moderation.
 
 ## Install
 
@@ -53,38 +53,32 @@ Use **Firefox for Android + Tampermonkey** instead: [Tampermonkey's Mozilla list
 ## Use
 
 1. Open a Reddit post and activate **Comment stream** in the post's controls.
-2. Let loading finish. The script opens collapsed comments, activates native reply loaders and lazy comment pages, and attempts deep continuation pages before sorting the comments already on the page.
-3. Read and use the native comments in newest-first order, including their existing reply, menu, vote, and moderation controls.
-4. Choose **View context** alongside a comment's actions to restore the actual Reddit hierarchy and highlight that comment. **Back to comment stream** returns to the sorted order without another fetch.
-5. Use **Load new comments** to fetch the post again and merge newly available native comments. Existing comments and drafts are retained. Use **Stop loading** to sort the comments revealed so far; the result is marked partial.
-6. **Normal view**, or the floating **Return to normal view** button, restores each comment's original position and collapse state. The floating return button appears only while comments are flattened.
+2. Let the JSON collection finish. It follows hidden replies and deep continuations before sorting. **Stop loading** lets you review a clearly marked partial snapshot.
+3. Read newest first. **Next comments** and **Previous comments** replace the current page of up to 50 cards. Filtering searches all collected comments and authors, including other pages.
+4. Open a comment's **… → View context** to see its ancestor chain and direct replies, with the selected comment outlined. Long branches have their own pages. **Back to stream** returns without fetching again.
+5. Choose **Open on Reddit** for native reply, vote, report, or moderation controls. The reader itself is read-only.
+6. **Refresh** fetches a new snapshot; comments first seen during this open session get a **NEW** badge. **Close** cancels pending work, removes the reader, and releases its snapshot. Reopening collects fresh data.
 
-Ordering uses comment creation time, so a new reply deep inside an old branch appears near the top. Editing a comment does not change its position. Comments without usable timestamps appear last. All loaded native comments remain in the document; there is no separate reader, filter, or pagination layer.
-
-New comments that Reddit inserts while the stream is active are also sorted. The script does not poll the server continuously; use **Load new comments** when checking for new activity. Returning to normal while loading cancels sorting; a native request already in flight may still finish adding replies in their normal positions.
+Ordering uses comment creation time, so a new reply deep inside an old branch appears near the top. Editing a comment does not change its position. Comments without usable timestamps appear last. The script does not continuously poll for new activity.
 
 ## How collection works
 
-The loader uses the page's existing session and Reddit's own “more replies,” “View more comments,” and lazy-loading controls. Some of these use Reddit's native POST requests to read more comments. To activate lazy pages, loading may scroll the comment area.
+The collector uses same-origin JSON GET requests with the current Reddit session. It starts with `/comments/POST_ID.json?sort=new&limit=500&raw_json=1`, expands explicit hidden IDs through `/api/morechildren.json` in batches of at most 100, and follows focused comment listings for deep “continue this thread” branches. Listing cursors and missing ancestors are also attempted. This does not navigate the page or activate native comment controls.
 
-On current Reddit, up to **three independent branches** can load together. Controls in the same branch or an ancestor/descendant branch wait their turn, and mobile controls that replace the whole tree run alone. Loading actions start at least 350 ms apart; the loader watches each branch's actual DOM changes instead of adding a fixed pause after every reply load. It only scrolls when needed, and retains a settling interval at the end to catch delayed loaders before sorting.
+Requests run sequentially, with starts at least 6.5 seconds apart, respecting the [`morechildren` endpoint's concurrency restriction](https://www.reddit.com/dev/api/#GET_api_morechildren). Timeouts, bounded retries, and `Retry-After` handling cover slow responses, rate limits, and server errors. Repeated or unresolved continuations are reported instead of retried endlessly. Large discussions can still take several minutes; keep the tab in the foreground on mobile.
 
-Old Reddit's native reply loads remain sequential because its [`morechildren` endpoint permits one request at a time](https://www.reddit.com/dev/api/#GET_api_morechildren). It benefits from the shorter waits too. Explicit continuation fetches that receive a rate limit or server error pause queued starts, increase spacing, and reduce subsequent concurrency. Cancellation stops queued actions immediately; already-started native requests may still finish.
+There is no fixed collection cap. To reduce memory use, records retain only reader fields, discarding nested response trees and unused media, award, and flair metadata. Progress updates use counts without repeatedly sorting the collection. The reader renders at most 50 cards, with at most 50 additional cards while context is open. Images and embeds appear as links instead of loading media. Paging replaces cards, closing context clears its cards, and closing the reader releases the session's data. The compact snapshot still grows with the total comment count; these limits do not guarantee arbitrary thread sizes on every phone.
 
-For deep “continue this thread” links, it fetches the same-origin continuation page in the background and imports additional **native Reddit comment markup**, preserving its parent relationships. It skips comments already present, retains native controls, and discards fetched page scripts. It then attempts loaders inside those newly added branches. Your browser's location does not change.
-
-The loader attempts the branches Reddit supplies without a fixed comment-count limit. Repeated cursors and nonprogressing loaders are not retried endlessly. Explicit page requests have timeouts, pacing, and retries for rate limits and server errors. Large discussions can take several minutes. Keep the tab in the foreground on mobile.
-
-**A completed traversal does not guarantee every comment was exposed.** Inaccessible or removed comments, moderator visibility, access challenges, rate limits, and comments arriving during loading can leave gaps. Unexpanded branches, denied pages, and mismatches with Reddit's reported count are shown as partial coverage. Some Reddit page variants do not return usable native comment markup when fetched; those branches remain available through their original links.
+**A completed traversal does not guarantee every comment was exposed.** Inaccessible or removed comments, account visibility, access challenges, rate limits, and new arrivals can leave gaps. Missing IDs, unresolved branches, denied requests, and mismatches with Reddit's reported count produce a partial-snapshot notice. Reddit may deny JSON access even when the normal page opens; sign in and try Refresh if appropriate. The reader does not fall back to expanding the native tree.
 
 ## Privacy and permissions
 
-- Requests initiated by the script go to the Reddit origin you are visiting, using its normal session cookies. Reddit's own components and media continue their usual requests.
+- Requests initiated by the script go to the Reddit origin you are visiting, using its normal session cookies. The underlying Reddit page continues its own usual requests.
 - The script does not send comments or account data to an external service.
-- Automatic actions only expand and load comments. The script does not automatically approve, remove, report, vote, or post. **The preserved native controls still perform their normal actions when you use them.**
+- The script only reads comments. It does not approve, remove, report, vote, or post. Native actions are available through **Open on Reddit**.
 - Each install file is self-contained, with `@grant none` and no remote runtime dependencies. Your userscript manager may check GitHub for script updates.
-- Existing comments retain their native formatting and media. Imported continuation markup has scripts and embedded executable documents removed; event attributes and unsafe links are stripped from comment bodies. Old Reddit's own control handlers are retained.
-- Refresh merges newly discovered comments; it does not replace existing comments with a fetched snapshot. Reddit remains responsible for updating vote and moderation state through its controls.
+- Reader formatting uses a small HTML allowlist. Scripts, event handlers, embedded documents, and unsafe links are discarded; external media is not automatically loaded by the reader.
+- Reader data stays in memory for the open session and is not persisted. Refresh replaces the snapshot; close discards it. The underlying Reddit comments and drafts are left in place.
 
 ## Development and verification
 
@@ -102,7 +96,7 @@ npm run test:browser
 
 See [compatibility and manual verification](docs/COMPATIBILITY.md) for the distinction between browser-engine testing and testing an installed userscript on a real device.
 
-To compare native loading performance with v1.1.0, run `git fetch --tags` and `npm run benchmark` after building. The benchmark uses identical native controls, comments, and simulated response delays for both versions, and verifies that the original nodes restore. The [recorded comparison](docs/COMPATIBILITY.md#controlled-performance-comparison) took 63% less loading time on current Reddit and 36% less on old Reddit; real Reddit timings vary.
+The large-thread fixture verifies global sorting and filtering across 2,505 comments while keeping rendered card counts bounded. Other tests cover context paging, cancellation, released readers, late post controls, and unchanged native comment nodes. These checks do not measure physical iPhone memory or certify against every browser memory limit.
 
 To prepare release downloads after building, run `python scripts/package-release.py` (Python 3, standard library only). It puts the three standalone scripts, the universal-only iOS ZIP, and SHA-256 checksums in `release/`. Upload those files as GitHub Release assets so the download links above serve attachments; keep raw install and metadata URLs available for extension installation and updates.
 

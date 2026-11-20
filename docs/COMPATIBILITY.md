@@ -11,65 +11,49 @@
 | Firefox for Android | Tampermonkey | Android installation route; real-device check still required |
 | Other browsers / managers | Must support ordinary JavaScript userscripts | Not separately verified |
 
-See the [installation instructions](../README.md#install) for downloads and official manager documentation. Userscripts requires opening its popup after copying or replacing a script to rescan its directory, then reloading Reddit; see its [directory notes](https://github.com/quoid/userscripts#scripts-directory).
+See the [installation instructions](../README.md#install) for downloads and official manager documentation. After copying or replacing a script, open the Userscripts popup to rescan its directory, then reload Reddit; see its [directory notes](https://github.com/quoid/userscripts#scripts-directory).
 
-The script uses content-context injection at DOM readiness, waits for a native comment tree, and remounts its toolbar if Reddit replaces the page. It runs on Reddit web pages, not in the native Reddit app. Both old Reddit and the current `shreddit-comment` layout have native DOM adapters.
+The script retains content-context injection at DOM readiness and remounts its in-post button if Reddit replaces the controls. Its separate reader stays outside Reddit's post components. It runs on Reddit web pages, not in the Reddit app.
 
-## Version 1.1.1 performance update — 2026-11-20
+## Version 1.2.0 — JSON reader restored
 
-The loader still operates Reddit's native browser controls and waits for available branches before sorting. Current Reddit can load up to three independent branches together. Old Reddit's native `morechildren` requests stay sequential, respecting the [endpoint's documented concurrency limit](https://www.reddit.com/dev/api/#GET_api_morechildren). Both paths react to DOM changes, avoid unnecessary scrolling, and remove fixed waits after successful loads.
+The native expansion approach in versions 1.1.0–1.1.1 was reported to load slowly and crash a phone under memory pressure. Version 1.2.0 restores the JSON collection and separate reader from 1.0.1, keeps the in-post button and Safari startup fixes, and reduces retained data and rendered cards. The obsolete native loader and its synthetic speed benchmark have been removed. Earlier versions remain available in Git history.
 
-The expanded suite contains **5 Node tests and 130 browser cases**. New checks cover branch isolation, the three-job cap, paced starts, old Reddit serialization, preserved native anchor handlers without navigation, cancellation of queued actions, and a shared cooldown after HTTP 429. Existing node identity, drafts, restoration, late hydration, and context checks remain in the suite.
+The verification suite contains **26 Node tests and 80 browser cases** across Chromium, Firefox, WebKit, mobile Chromium emulation, and mobile WebKit emulation. Each browser project covers both Reddit layouts.
 
-### Controlled performance comparison
+- Collection checks cover nested replies, batches of at most 100 hidden IDs, sequential requests, focused deep continuations, missing ancestors, pagination, deduplication, repeated cursors, count mismatches, cancellation, retry pacing, and denied requests.
+- Compact-record checks ensure nested replies and unused Reddit media, awards, and flair data are not retained. Progress reporting does not construct sorted snapshots during collection.
+- A 2,505-comment fixture verifies global sort and filter behavior while paging replaces the current 50 cards. A 320-comment branch fixture checks a maximum of 50 context cards and access to both the earliest ancestor and last reply. Closing context removes its cards; closing the reader removes its host and reopening starts a fresh collection.
+- Browser checks ensure native comment nodes, markup, and collapse states stay unchanged, with no native loader clicks. They also cover in-post button placement, late hydration, navigation, closing during an active request, refresh, HTML sanitization, and blocked media requests.
+- Startup tests cover DOM readiness, document replacement, and a page rejecting inline scripts. Legacy Reddit's temporary mobile viewport adjustment is restored when the reader closes.
 
-Measured with the checked-in `scripts/benchmark.mjs` in desktop Chromium on Windows. Each run starts with 12 parent comments and loads one reply per parent, using the native controls and a fixed 800 ms response delay. Both versions made 12 native loads, ended with the same 24 comments, and restored the original comment nodes.
+Tests inject the built script through browser automation; they do not install Tampermonkey or Userscripts. Emulation does not certify a physical iPhone or Android device. The tests verify bounded card counts and compact data retention, not physical-device peak memory or a universal absence of crashes. Authenticated moderation actions are not tested; the reader is read-only and links to native Reddit for those actions.
 
-| Layout | v1.1.0 | v1.1.1 | Less loading time | Peak concurrent native loads in v1.1.1 |
-| --- | ---: | ---: | ---: | ---: |
-| Current Reddit | 18.7 s | 7.0 s | 63% | 3 |
-| Old Reddit | 18.9 s | 12.1 s | 36% | 1 |
-
-These are controlled fixture measurements, not live Reddit speed guarantees. Network latency, branch dependencies, device rendering speed, and access errors affect actual times. Reproduce with `npm run build`, `git fetch --tags`, then `npm run benchmark`; an optional baseline Git ref can be passed after `--`.
-
-Live logged-out checks of the Seattle post revealed 132 native comments in desktop Chromium and 129 in mobile WebKit emulation while Reddit reported 148. Both runs preserved original comment/body/action elements, sorted newest first, restored the original hierarchy, and produced no page JavaScript errors. Unavailable continuations remained explicitly partial. Live old Reddit access and physical iOS/Android installations remain unverified.
-
-## Version 1.1.0 verification — 2026-11-20
-
-This release replaces the separate reader from versions 1.0.x with in-place native comment sorting.
-
-- **5 Node tests** cover post and continuation URLs, origin restrictions, Reddit timestamp formats, stable ordering, and cancellable pacing.
-- **110 Playwright cases** exercise Chromium, Firefox, WebKit, mobile Chromium emulation, and mobile WebKit emulation. Each project tests both Reddit layouts.
-- Fixture checks verify that the original DOM nodes, direct and delegated event handlers, reply drafts, menus, and simulated moderation controls survive sorting. They verify exact parent restoration, collapse state, native comment replacements, duplicate native nodes, context navigation, refresh, and cancellation.
-- Loader checks cover recursive native expansion, imported continuation HTML, scripts stripped from fetched content, mobile reveal buttons, delayed hydration, intersection-based lazy pages, access errors, unknown timestamps, repeated cursors, and replies arriving after cancellation.
-- A logged-out live check of the reported [Seattle post](https://www.reddit.com/r/Seattle/comments/1y0m3pi/i_love_these_mushrooms/) in desktop Chromium revealed **126 native comments**, and mobile WebKit emulation revealed **123**. Both checks confirmed newest-first order, unchanged original comment/body/action nodes, restored original parents, and removal of all flattening markers when returning to normal. No page JavaScript errors were observed in these runs.
-- The live post reported 142 comments. Some continuation fetches returned access pages or no usable comment tree, and the script correctly reported partial coverage. Counts are observations from these runs, not a promise of full collection for other accounts or future versions of Reddit.
-- Live desktop and mobile screenshots were checked for comment layout, toolbar placement, and the floating return control. Live old Reddit access was blocked in this environment, so old Reddit behavior was checked with fixtures.
-
-Tests inject the built script through browser automation; they do not install Tampermonkey or Userscripts. Browser emulation does not certify a physical iPhone or Android device. Authenticated Reddit moderation controls have **not** been tested live; tests use fabricated controls and the live check preserves the actual logged-out controls without voting, posting, or moderating.
+Live logged-out checks of the reported [Seattle post](https://www.reddit.com/r/Seattle/comments/1y0m3pi/i_love_these_mushrooms/) on 2026-11-20 verified button placement in desktop Chromium and mobile WebKit emulation. Reddit returned HTTP 403 for the JSON listing in both, so live collection could not be verified. Both readers reported partial coverage, preserved the existing native comment count and parents, and removed the reader on close. No page JavaScript errors were observed. Mobile reader and context screenshots using controlled responses were also inspected.
 
 ## Manual release checklist
 
 Run these checks on both Reddit layouts in each browser/manager combination you use:
 
-- Confirm the manager lists the expected version, grants Reddit access, and injects after reloading.
-- Check that **Comment stream** appears with the post's comment controls, or below the post on mobile. It should not float in normal view.
-- Open a draft reply, enter text, and activate the stream. Confirm the draft, native menus, and account-appropriate moderation controls remain available.
-- Load several reply levels, a lazy comment page, and a deep continuation. Confirm a recent deep reply sorts above older top-level comments. Any blocked branch must produce a partial result.
-- Choose **View context** beside a deep reply's actions. Confirm the actual ancestor hierarchy is restored and the selected comment is highlighted. Return using **Back to comment stream**.
-- Use **Normal view** and check the original hierarchy and collapse states. Confirm the floating return button disappears.
-- Stop loading, then load new comments. Also return to normal during loading and check that late requests do not reactivate sorting.
-- Navigate between posts without a full reload. Check that Reddit replacing a tree does not leave an old toolbar or resurrect removed comments.
-- Repeat on a narrow mobile screen and after backgrounding briefly. The operating system may suspend background work.
+- Confirm the manager lists version 1.2.0 or later, grants Reddit access, and injects after reloading.
+- Check that **Comment stream** appears in the post's controls or below the post. It should not float in normal view.
+- Activate the reader with some native branches still collapsed. They should stay collapsed and in place after closing it.
+- Load a thread with hidden replies and a deep continuation. Confirm a recent deep reply sorts above older top-level comments. Unavailable content must produce a partial result.
+- Page forward and backward, and search for an older comment. Search must include comments outside the visible page.
+- Choose **… → View context** beside a deep reply. Check its ancestors, parent, selected highlight, and direct replies. Page through a long branch, then return with **Back to stream**.
+- Open the comment on Reddit for native actions, checking that the intended comment and parent context appear.
+- Stop loading and review the partial snapshot. Refresh to retrieve new comments. Close during loading and check that late responses do not reopen the reader.
+- Reopen after closing to collect fresh data. Navigate between posts without reloading and verify that no old reader remains.
+- Repeat on a narrow mobile screen, a large active post, and after backgrounding briefly. Mobile operating systems may suspend background work.
 
-Do not include private subreddit content, moderator-only material, session cookies, or account tokens in public bug reports. Fabricated HTML fixtures are preferred for reproducible adapter issues.
+Do not include private subreddit content, moderator-only material, session cookies, or account tokens in public bug reports. Fabricated fixtures are preferred.
 
 ## Known limits
 
-- Reddit controls the native elements and their hydration. Changes to its DOM, lazy-loading logic, custom elements, or event delegation may require adapter updates. Imported continuation markup depends on the native components already available on that page.
-- A denied continuation fetch, missing native markup, repeated loader, or mismatch with Reddit's reported count produces partial coverage. The script cannot retrieve content Reddit withholds.
-- Existing comment nodes are retained on refresh to preserve their state and drafts. Refresh discovers additional comments; it does not overwrite existing bodies or moderation state with fetched HTML.
-- Reddit may add new comments while loading. Comments inserted into the native tree are sorted while the stream is active, but the script does not continuously poll the server.
-- Every loaded native comment remains in the document. Very large threads can consume substantial memory and render slowly, especially on phones.
-- Loading may scroll to activate lazy native pages. Native requests already in flight may finish after cancellation. The script stops its own fetches and prevents canceled work from reactivating sorting.
-- Old Reddit retains its desktop layout on mobile; the script does not replace the site's styling or viewport.
+- Reddit may deny JSON requests even when its normal HTML page is visible. The reader reports failure or a partial snapshot; it does not fall back to native expansion.
+- Requests are serial and paced. Deep branches and large discussions can still take minutes. Rate limits and retries can lengthen this further.
+- The full compact snapshot remains in memory while open, so its size still grows with the number and length of comments. Rendering is limited to 50 stream cards plus up to 50 context cards; there is no promise that arbitrarily large posts fit every phone.
+- Reddit's underlying page remains loaded and uses its own memory. The script neither expands that tree nor stops Reddit's own background activity.
+- The reader does not preserve native media or interactive controls in its cards. Formatting is sanitized, media is not loaded automatically, and native actions are reached through **Open on Reddit**.
+- Deleted, removed, restricted, or newly arriving comments may not be returned. Completed discovery is a snapshot, not a guarantee that Reddit exposed every comment.
+- Closing releases the reader's data, so reopening fetches again. Refresh replaces the snapshot and preserves only seen IDs for **NEW** labels during that open session.

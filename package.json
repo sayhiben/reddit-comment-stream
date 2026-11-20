@@ -1,8 +1,8 @@
 {
   "name": "reddit-comment-stream",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "private": true,
-  "description": "Flatten Reddit's native comments newest first while preserving their controls and threaded context.",
+  "description": "Read Reddit comments newest first in a lightweight JSON reader with threaded context.",
   "type": "module",
   "license": "MIT",
   "engines": { "node": ">=20" },
@@ -10,7 +10,6 @@
     "build": "node scripts/build.mjs",
     "test": "node scripts/test.mjs",
     "test:browser": "playwright test",
-    "benchmark": "node scripts/benchmark.mjs",
     "check": "npm run build && npm test && npm run test:browser"
   },
   "devDependencies": {
