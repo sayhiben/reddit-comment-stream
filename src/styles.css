@@ -1,0 +1,85 @@
+:host { all: initial; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 15px; color: #18212a; color-scheme: light dark; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+button, input, summary { font: inherit; }
+button, summary, a { -webkit-tap-highlight-color: transparent; }
+button, summary { cursor: pointer; }
+button { min-height: 42px; border: 1px solid #b7c1ca; border-radius: 8px; background: #fff; color: #18212a; padding: 8px 14px; }
+button:hover, summary:hover { background: #eaf3f6; }
+button:disabled { cursor: wait; opacity: .6; }
+a { color: #086475; text-underline-offset: 3px; }
+:focus-visible { outline: 3px solid #087f9b; outline-offset: 3px; }
+.launcher { position: fixed; right: max(16px, env(safe-area-inset-right)); bottom: max(20px, env(safe-area-inset-bottom)); z-index: 2147483646; color: #fff; background: #075d6c; border: 0; box-shadow: 0 3px 14px #0004; font-weight: 650; padding: 12px 18px; }
+.launcher:hover { background: #084955; }
+dialog { color: #18212a; background: #f2f5f7; border: 1px solid #b7c1ca; border-radius: 14px; padding: 0; box-shadow: 0 12px 60px #0004; }
+dialog::backdrop { background: #101b27a8; }
+.main { position: fixed; inset: 0; margin: auto; width: min(1060px, calc(100% - 32px)); height: calc(100% - 40px); max-width: none; max-height: none; overflow: hidden; }
+.shell { height: 100%; display: flex; flex-direction: column; }
+header { flex: 0 0 auto; padding: 18px 24px 14px; border-bottom: 1px solid #d5dde2; background: #fff; }
+.heading { display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; }
+h1 { font-size: 20px; margin: 0 0 5px; letter-spacing: -.4px; }
+h2 { font-size: 18px; margin: 0; }
+.subtitle { color: #536471; margin: 0; line-height: 1.4; font-size: 13px; }
+.title { font-weight: 600; margin: 12px 0 0; overflow-wrap: anywhere; }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+.primary { color: #fff; background: #075d6c; border-color: #075d6c; }
+.primary:hover { background: #084955; }
+.search { min-width: 140px; flex: 1 1 200px; color: inherit; background: #f7f9fa; border: 1px solid #b7c1ca; border-radius: 8px; min-height: 42px; padding: 9px 12px; }
+.status { margin: 12px 0 0; color: #465764; line-height: 1.5; font-size: 13px; }
+.scroll { overflow-y: auto; overscroll-behavior: contain; flex: 1 1 auto; padding: 18px 24px 40px; -webkit-overflow-scrolling: touch; }
+.notice { padding: 12px 14px; border: 1px solid #c6d8df; border-radius: 8px; background: #eaf3f6; color: #314d5b; margin-bottom: 16px; line-height: 1.5; font-size: 13px; }
+.warning { background: #fff4dd; color: #694b14; border-color: #ddc992; }
+.notice ul { margin: 6px 0; padding-left: 20px; }
+.empty { padding: 30px 10px; text-align: center; color: #536471; line-height: 1.7; }
+.comment { position: relative; border: 1px solid #d3dce2; border-radius: 10px; background: #fff; margin-bottom: 12px; padding: 16px 18px; overflow-wrap: anywhere; }
+.meta { display: flex; align-items: center; gap: 7px 10px; flex-wrap: wrap; color: #536471; font-size: 12px; line-height: 1.5; padding-right: 38px; }
+.author { font-weight: 700; font-size: 14px; }
+.badge { color: #075d6c; background: #def1ee; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+.mod { color: #694b14; background: #fff4dd; }
+.body { font-size: 15px; line-height: 1.65; margin-top: 10px; }
+.body > :first-child, .body > div > :first-child { margin-top: 0; }
+.body > :last-child, .body > div > :last-child { margin-bottom: 0; }
+.body.plain { white-space: pre-wrap; }
+.body pre { overflow-x: auto; padding: 10px; background: #edf1f4; border-radius: 5px; white-space: pre-wrap; }
+.body code { font-size: .9em; }
+.body blockquote { margin-left: 0; padding-left: 14px; border-left: 3px solid #b5c6cf; color: #536471; }
+.body table { display: block; overflow-x: auto; border-collapse: collapse; }
+.body th, .body td { border: 1px solid #b7c1ca; padding: 5px; }
+.actions { position: absolute; right: 10px; top: 8px; }
+.actions summary { list-style: none; border-radius: 6px; min-width: 40px; min-height: 36px; padding: 0 8px; text-align: center; font-weight: 700; font-size: 22px; }
+.actions summary::-webkit-details-marker { display: none; }
+.menu { position: absolute; right: 0; top: 40px; width: 190px; background: #fff; border: 1px solid #b7c1ca; border-radius: 8px; padding: 5px; box-shadow: 0 4px 16px #0002; z-index: 5; }
+.menu button, .menu a { display: block; width: 100%; text-align: left; padding: 10px; border: 0; font-size: 14px; border-radius: 4px; }
+.parent-label { color: #536471; margin-top: 10px; font-size: 12px; }
+.more { display: block; margin: 20px auto 0; }
+.context { width: min(900px, calc(100% - 48px)); max-height: calc(100% - 64px); overflow-y: auto; }
+.context header { position: sticky; top: 0; z-index: 10; }
+.context-body { padding: 18px 20px; }
+.context .comment { margin-left: min(calc(var(--depth, 0) * 14px), 70px); border-left: 3px solid #bed2dc; }
+.context .selected { border: 2px solid #087f9b; background: #eff9fa; }
+.context .relation { color: #075d6c; font-size: 12px; font-weight: 650; margin-bottom: 8px; }
+@media (max-width: 600px) {
+  .main { width: 100%; height: 100%; height: 100dvh; border-radius: 0; border: 0; }
+  header { padding: max(14px, env(safe-area-inset-top)) 14px 12px; }
+  .scroll { padding: 14px 10px max(30px, env(safe-area-inset-bottom)); }
+  h1 { font-size: 18px; }
+  .comment { padding: 14px; }
+  .context { width: 100%; max-height: 100%; height: 100%; height: 100dvh; border: 0; border-radius: 0; }
+  .context-body { padding: 14px 8px; }
+  .context .comment { margin-left: min(calc(var(--depth, 0) * 9px), 36px); }
+}
+@media (prefers-color-scheme: dark) {
+  :host, dialog { color: #e6edf1; }
+  dialog { background: #151c22; border-color: #45535d; }
+  header, .comment, .menu, button { color: #e6edf1; background: #202a32; border-color: #45535d; }
+  .search, .body pre { color: #e6edf1; background: #151c22; border-color: #45535d; }
+  .subtitle, .status, .meta, .parent-label, .empty, .body blockquote { color: #abbcc7; }
+  a { color: #77cedd; }
+  button:hover, summary:hover { background: #31434e; }
+  .primary, .launcher { background: #086a7b; color: #fff; }
+  .notice { background: #243c48; color: #d4e5ed; border-color: #455f6c; }
+  .warning, .mod { background: #463c24; color: #edd697; border-color: #80704a; }
+  .badge { background: #224f50; color: #aaece5; }
+  .context .selected { background: #193c44; }
+  .context .relation { color: #8fdce4; }
+}

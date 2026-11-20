@@ -1,0 +1,19 @@
+{
+  "name": "reddit-comment-stream",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A newest-first, context-preserving Reddit comment reader for userscript managers.",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/test.mjs",
+    "test:browser": "playwright test",
+    "check": "npm run build && npm test && npm run test:browser"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "esbuild": "0.28.2"
+  }
+}
