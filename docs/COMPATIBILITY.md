@@ -15,6 +15,25 @@ See the [installation instructions](../README.md#install) for downloads and offi
 
 The script uses content-context injection at DOM readiness, waits for a native comment tree, and remounts its toolbar if Reddit replaces the page. It runs on Reddit web pages, not in the native Reddit app. Both old Reddit and the current `shreddit-comment` layout have native DOM adapters.
 
+## Version 1.1.1 performance update — 2026-11-20
+
+The loader still operates Reddit's native browser controls and waits for available branches before sorting. Current Reddit can load up to three independent branches together. Old Reddit's native `morechildren` requests stay sequential, respecting the [endpoint's documented concurrency limit](https://www.reddit.com/dev/api/#GET_api_morechildren). Both paths react to DOM changes, avoid unnecessary scrolling, and remove fixed waits after successful loads.
+
+The expanded suite contains **5 Node tests and 130 browser cases**. New checks cover branch isolation, the three-job cap, paced starts, old Reddit serialization, preserved native anchor handlers without navigation, cancellation of queued actions, and a shared cooldown after HTTP 429. Existing node identity, drafts, restoration, late hydration, and context checks remain in the suite.
+
+### Controlled performance comparison
+
+Measured with the checked-in `scripts/benchmark.mjs` in desktop Chromium on Windows. Each run starts with 12 parent comments and loads one reply per parent, using the native controls and a fixed 800 ms response delay. Both versions made 12 native loads, ended with the same 24 comments, and restored the original comment nodes.
+
+| Layout | v1.1.0 | v1.1.1 | Less loading time | Peak concurrent native loads in v1.1.1 |
+| --- | ---: | ---: | ---: | ---: |
+| Current Reddit | 18.7 s | 7.0 s | 63% | 3 |
+| Old Reddit | 18.9 s | 12.1 s | 36% | 1 |
+
+These are controlled fixture measurements, not live Reddit speed guarantees. Network latency, branch dependencies, device rendering speed, and access errors affect actual times. Reproduce with `npm run build`, `git fetch --tags`, then `npm run benchmark`; an optional baseline Git ref can be passed after `--`.
+
+Live logged-out checks of the Seattle post revealed 132 native comments in desktop Chromium and 129 in mobile WebKit emulation while Reddit reported 148. Both runs preserved original comment/body/action elements, sorted newest first, restored the original hierarchy, and produced no page JavaScript errors. Unavailable continuations remained explicitly partial. Live old Reddit access and physical iOS/Android installations remain unverified.
+
 ## Version 1.1.0 verification — 2026-11-20
 
 This release replaces the separate reader from versions 1.0.x with in-place native comment sorting.

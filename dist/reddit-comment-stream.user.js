@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Comment Stream
 // @namespace    https://github.com/sayhiben/reddit-comment-stream
-// @version      1.1.0
+// @version      1.1.1
 // @description  Reveal and sort native Reddit comments newest first, preserving their controls and threaded context.
 // @author       sayhiben
 // @license      MIT
@@ -353,67 +353,155 @@
   var NativeLoader = class {
     constructor(adapter, { signal, onProgress = () => {
     }, expand = () => {
-    }, delayMs = 1e3, timeoutMs = 12e3 } = {}) {
-      Object.assign(this, { adapter, signal, onProgress, expand, delayMs, timeoutMs });
+    }, delayMs = 350, timeoutMs = 12e3, concurrency = 3, settleMs = 1200 } = {}) {
+      Object.assign(this, { adapter, onProgress, expand, delayMs, timeoutMs, concurrency, settleMs });
+      this.controller = new AbortController();
+      this.signal = this.controller.signal;
+      this.externalSignal = signal;
+      this.abort = () => this.controller.abort();
+      if (signal?.aborted) this.abort();
+      else signal?.addEventListener("abort", this.abort, { once: true });
       this.attempted = /* @__PURE__ */ new Set();
       this.warnings = /* @__PURE__ */ new Set();
+      this.active = /* @__PURE__ */ new Map();
+      this.waiters = /* @__PURE__ */ new Set();
       this.requests = 0;
       this.lastRequest = 0;
+      this.backoffUntil = 0;
+      this.queue = Promise.resolve();
     }
-    async pace() {
-      if (this.signal?.aborted) throw stopped();
-      await pause(Math.max(0, this.lastRequest + this.delayMs - Date.now()), this.signal);
-      this.lastRequest = Date.now();
-      this.requests++;
+    wake() {
+      for (const wake of [...this.waiters]) wake();
+    }
+    wait(ms) {
+      if (this.signal.aborted) return Promise.reject(stopped());
+      return new Promise((resolve, reject) => {
+        const finish = (error) => {
+          clearTimeout(timer);
+          this.waiters.delete(wake);
+          this.signal.removeEventListener("abort", abort);
+          error ? reject(error) : resolve();
+        };
+        const wake = () => finish();
+        const abort = () => finish(stopped());
+        const timer = setTimeout(wake, Math.max(0, ms));
+        this.waiters.add(wake);
+        this.signal.addEventListener("abort", abort, { once: true });
+      });
+    }
+    // Serialize only the start of an action, not the network/rendering wait.
+    // Reserving a slot inside this queue prevents concurrent workers bursting.
+    initiate(action) {
+      const task = this.queue.then(async () => {
+        for (; ; ) {
+          if (this.signal.aborted) throw stopped();
+          const remaining = Math.max(this.lastRequest + this.delayMs, this.backoffUntil) - Date.now();
+          if (remaining <= 0) break;
+          await pause(remaining, this.signal);
+        }
+        this.lastRequest = Date.now();
+        this.requests++;
+        try {
+          return await action();
+        } finally {
+          this.lastRequest = Date.now();
+        }
+      });
+      this.queue = task.catch(() => {
+      });
+      return task;
     }
     async fetchPage(url) {
       for (let attempt = 0; attempt < 3; attempt++) {
-        await this.pace();
         const controller = new AbortController();
         const abort = () => controller.abort();
-        this.signal?.addEventListener("abort", abort, { once: true });
-        const timer = setTimeout(abort, 3e4);
+        this.signal.addEventListener("abort", abort, { once: true });
+        let timer;
         try {
-          const response = await fetch(url.href, { credentials: "same-origin", cache: "no-store", redirect: "error", signal: controller.signal, headers: { Accept: "text/html" } });
-          if ((response.status === 429 || response.status >= 500) && attempt < 2) {
+          let request;
+          await this.initiate(() => {
+            timer = setTimeout(abort, 3e4);
+            request = fetch(url.href, { credentials: "same-origin", cache: "no-store", redirect: "error", signal: controller.signal, headers: { Accept: "text/html" } });
+          });
+          const response = await request;
+          if (response.status === 429 || response.status >= 500) {
             const value = response.headers.get("Retry-After");
             const seconds = Number(value);
             const wait = Number.isFinite(seconds) ? seconds * 1e3 : Date.parse(value) - Date.now();
-            await pause(Math.max(wait || 0, 2e3 * 2 ** attempt), this.signal);
-            continue;
+            this.backoffUntil = Math.max(this.backoffUntil, Date.now() + Math.max(wait || 0, 2e3 * 2 ** attempt));
+            this.delayMs = Math.max(this.delayMs, 1e3);
+            this.concurrency = 1;
+            if (attempt < 2) continue;
           }
           if (!response.ok) throw new Error(`Reddit returned HTTP ${response.status} while loading a thread.`);
           return await response.text();
         } catch (error) {
-          if (this.signal?.aborted) throw stopped();
+          if (this.signal.aborted) throw stopped();
           if (error.name === "AbortError") throw new Error("Reddit timed out while loading a thread.");
           throw error;
         } finally {
           clearTimeout(timer);
-          this.signal?.removeEventListener("abort", abort);
+          this.signal.removeEventListener("abort", abort);
         }
       }
     }
-    async click(item) {
-      await this.pace();
-      const before = this.adapter.comments().length;
-      if (item.button?.disabled) throw new Error("A native reply loader is still busy.");
-      item.node.scrollIntoView({ block: "center" });
-      await pause(200, this.signal);
-      if (item.node.isConnected) item.button?.click();
-      const started = Date.now();
-      while (Date.now() - started < this.timeoutMs) {
-        await pause(200, this.signal);
-        if (!item.node.isConnected || this.adapter.comments().length !== before) {
-          await pause(350, this.signal);
-          return;
-        }
+    scope(item) {
+      return item.node.closest(COMMENT);
+    }
+    independent(item) {
+      const scope = this.scope(item);
+      for (const { item: other } of this.active.values()) {
+        if (this.adapter.kind === "old" && item.type === "native" && other.type === "native") return false;
+        if (item.key.startsWith("reveal:") || other.key.startsWith("reveal:")) return false;
+        const otherScope = this.scope(other);
+        if (!scope && !otherScope || scope === otherScope || scope && otherScope && (scope.contains(otherScope) || otherScope.contains(scope))) return false;
       }
-      throw new Error("A native reply loader did not reveal more comments.");
+      return true;
+    }
+    async click(item) {
+      const scope = this.scope(item);
+      const comments = () => [...(scope || this.adapter.root).querySelectorAll(COMMENT)].filter((node) => scope || !node.parentElement?.closest(COMMENT));
+      let before;
+      await this.initiate(async () => {
+        if (!item.node.isConnected) return;
+        if (item.button?.disabled) throw new Error("A native reply loader is still busy.");
+        before = new Set(comments());
+        const rect = item.node.getBoundingClientRect();
+        if (!item.button || rect.top < 0 || rect.bottom > innerHeight) {
+          item.node.scrollIntoView({ block: "center" });
+          await pause(150, this.signal);
+        }
+        if (item.node.isConnected && item.button) {
+          const preventNavigation = (event) => event.preventDefault();
+          if (item.button.matches("a")) item.button.addEventListener("click", preventNavigation);
+          try {
+            item.button.click();
+          } finally {
+            item.button.removeEventListener("click", preventNavigation);
+          }
+        }
+      });
+      const started = Date.now();
+      while (item.node.isConnected) {
+        if (this.signal.aborted) throw stopped();
+        if (before && comments().some((node) => !before.has(node))) return;
+        const remaining = this.timeoutMs - (Date.now() - started);
+        if (remaining <= 0) throw new Error("A native reply loader did not reveal more comments.");
+        await this.wait(Math.min(1e3, remaining));
+      }
+    }
+    async run(item) {
+      if (item.type === "native") return this.click(item);
+      const result = this.adapter.importPage(await this.fetchPage(item.url), { sourceURL: item.url.href, marker: item.node });
+      if (!result.progressed) this.warnings.add("A continuation page did not expose additional native comments.");
     }
     async load({ refresh = false } = {}) {
       let wasStopped = false;
-      let quiet = false;
+      let quietSince = null;
+      let previousCount = -1;
+      let previousLoaders = "";
+      const observer = new MutationObserver(() => this.wake());
+      observer.observe(this.adapter.root, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "loading", "aria-busy"] });
       try {
         if (refresh) {
           const url = new URL(this.adapter.post.path, location.origin);
@@ -427,33 +515,43 @@
           }
         }
         for (; ; ) {
-          if (this.signal?.aborted) throw stopped();
+          if (this.signal.aborted) throw stopped();
           this.expand();
           const remaining = this.adapter.expanders();
-          this.onProgress({ count: this.adapter.comments().length, pending: remaining.length, requests: this.requests });
-          const item = remaining.find((item2) => !this.attempted.has(item2.key));
-          if (!item) {
-            if (quiet) break;
-            quiet = true;
-            await pause(1200, this.signal);
-            continue;
+          for (const item of remaining) {
+            if (this.active.size >= this.concurrency) break;
+            if (this.attempted.has(item.key) || !this.independent(item)) continue;
+            this.attempted.add(item.key);
+            const job = { item };
+            this.active.set(item.key, job);
+            job.promise = this.run(item).catch((error) => {
+              if (error.name !== "AbortError") this.warnings.add(error.message || "A reply branch could not be loaded.");
+            }).finally(() => {
+              this.active.delete(item.key);
+              this.wake();
+            });
           }
-          quiet = false;
-          this.attempted.add(item.key);
-          try {
-            if (item.type === "native") await this.click(item);
-            else {
-              const result = this.adapter.importPage(await this.fetchPage(item.url), { sourceURL: item.url.href, marker: item.node });
-              if (!result.progressed) this.warnings.add("A continuation page did not expose additional native comments.");
-            }
-          } catch (error) {
-            if (error.name === "AbortError") throw error;
-            this.warnings.add(error.message || "A reply branch could not be loaded.");
+          const count2 = this.adapter.comments().length;
+          const loaders = remaining.map((item) => item.key).join("|");
+          this.onProgress({ count: count2, pending: remaining.length, requests: this.requests, active: this.active.size });
+          if (this.active.size) quietSince = null;
+          else {
+            if (count2 !== previousCount || loaders !== previousLoaders) quietSince = null;
+            quietSince ??= Date.now();
+            if (Date.now() - quietSince >= this.settleMs) break;
           }
+          previousCount = count2;
+          previousLoaders = loaders;
+          await this.wait(quietSince === null ? 1e3 : this.settleMs - (Date.now() - quietSince));
         }
       } catch (error) {
         if (error.name === "AbortError") wasStopped = true;
         else this.warnings.add(error.message);
+      } finally {
+        observer.disconnect();
+        this.controller.abort();
+        await Promise.allSettled([...this.active.values()].map((job) => job.promise));
+        this.externalSignal?.removeEventListener("abort", this.abort);
       }
       const count = this.adapter.comments().length;
       const pending = this.adapter.expanders().length;
@@ -593,8 +691,8 @@
           const loader = new NativeLoader(adapter, {
             signal: controller.signal,
             expand: () => order.expand(),
-            onProgress: ({ count, pending, requests }) => {
-              if (!disposed && run === generation) status.textContent = `Loading · ${count.toLocaleString()} native comments · ${pending} reply loaders · ${requests} requests`;
+            onProgress: ({ count, pending, active = 0 }) => {
+              if (!disposed && run === generation) status.textContent = `Loading · ${count.toLocaleString()} native comments · ${pending} branches left · ${active} loading`;
             }
           });
           lastResult = await loader.load({ refresh });

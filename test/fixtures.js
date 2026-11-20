@@ -20,7 +20,7 @@ export function pageHTML(kind, comments, { total, post = 'abc123', script = true
   document.querySelectorAll('.vote').forEach(n=>n.addEventListener('click',()=>window.nativeDirectClicks++));
   const tree=document.querySelector('.commentarea,shreddit-comment-tree');
   tree.addEventListener('click',async e=>{
-    const button=e.target.closest('button,a.expand'); if(!button)return;
+    const button=e.target.closest('button,a.expand,[data-native-load]'); if(!button)return;
     const node=button.closest('shreddit-comment,.thing.comment');
     if(button.matches('.expand')){e.preventDefault();node.classList.toggle('collapsed');button.textContent=node.classList.contains('collapsed')?'[+]':'[-]';}
     if(button.matches('.vote,.reply,.mod,.native-menu'))window.nativeEvents.push(button.textContent);

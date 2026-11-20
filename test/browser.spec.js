@@ -26,6 +26,43 @@ async function install(page, kind, body, respond = () => '', options = {}) {
 }
 
 for (const kind of ['old', 'new']) {
+  if (kind === 'new') test(`${kind}: overlaps independent native branches with three slots and isolates shared parents`, async ({ page }) => {
+    const gates = new Map();
+    for (const key of ['a','a2','b','c','d']) {
+      let release;
+      const promise = new Promise(resolve => { release = resolve; });
+      gates.set(key, { promise, release });
+    }
+    const started = [];
+    let active = 0;
+    let peak = 0;
+    const body = comment(kind, 'pa', 100, more(kind, 'a') + more(kind, 'a2'))
+      + ['b','c','d'].map(key => comment(kind, `p${key}`, 100, more(kind, key))).join('');
+    await install(page, kind, body, async url => {
+      const key = url.pathname.split('/').at(-1);
+      started.push({ key, at: Date.now() });
+      peak = Math.max(peak, ++active);
+      await gates.get(key).promise;
+      active--;
+      return comment(kind, key, 500, '', { depth: 1 });
+    });
+    await page.getByRole('button', { name: 'Comment stream', exact: true }).click();
+    await expect.poll(() => started.map(item => item.key)).toEqual(['a','b','c']);
+    await expect(page.locator('[data-rcs-flat-comment]')).toHaveCount(0);
+    gates.get('b').release();
+    await expect.poll(() => started.map(item => item.key)).toEqual(['a','b','c','d']);
+    // Completing b must not release a's slot or unlock a2 in the same branch.
+    expect(active).toBe(3);
+    gates.get('a').release();
+    await expect.poll(() => started.map(item => item.key)).toEqual(['a','b','c','d','a2']);
+    for (const gate of gates.values()) gate.release();
+    await expect(page.locator('[data-rcs-flat-comment]')).toHaveCount(9);
+    expect(peak).toBe(3);
+    expect(started.slice(1).every((item, i) => item.at - started[i].at >= 300)).toBe(true);
+    await page.getByRole('button', { name: 'Normal view', exact: true }).click();
+    await expect(nodeFor(page, 'pa').locator('[thingid="t1_a2"],[data-fullname="t1_a2"]')).toHaveCount(1);
+  });
+
   test(`${kind}: reorders original nodes, preserves controls and drafts, and exactly restores hierarchy`, async ({ page }, info) => {
     const body = comment(kind, 'parent', 100, comment(kind, 'child', 300, comment(kind, 'grand', 500, '', { depth: 2 }), { depth: 1 })) + comment(kind, 'sibling', 400);
     await install(page, kind, body);
@@ -161,6 +198,68 @@ for (const kind of ['old', 'new']) {
     await expect(page.locator('[data-rcs-flat-comment]')).toHaveCount(0);
   });
 }
+
+test('canceling stops queued activations as well as concurrent workers', async ({ page }) => {
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  let started = 0;
+  await install(page, 'new', ['a','b','c','d'].map(id => comment('new', `p${id}`, 100, more('new', id))).join(''), async () => {
+    started++;
+    await pending;
+    return comment('new', 'late', 900, '', { depth: 1 });
+  });
+  await page.getByRole('button', { name: 'Comment stream', exact: true }).click();
+  await expect.poll(() => started).toBe(1);
+  await page.getByRole('button', { name: 'Normal view', exact: true }).click();
+  const canceledAt = started;
+  release();
+  await expect(nodeFor(page, 'late').first()).toBeVisible();
+  await page.waitForTimeout(1100);
+  expect(started).toBe(canceledAt);
+  await expect(page.locator('[data-rcs-flat-comment]')).toHaveCount(0);
+});
+
+test('old Reddit serializes native morechildren loads while removing fixed per-branch waits', async ({ page }) => {
+  let active = 0;
+  let peak = 0;
+  let completed = 0;
+  const body = ['a','b','c'].map(id => comment('old', `p${id}`, 100, more('old', id)
+    .replace('<button ', '<a href="/r/test/" onclick="window.inlineRuns=(window.inlineRuns||0)+1" ')
+    .replace('</button>', '</a>'))).join('');
+  const { url: originalURL } = await install(page, 'old', body, async url => {
+    peak = Math.max(peak, ++active);
+    await new Promise(resolve => setTimeout(resolve, 600));
+    active--;
+    completed++;
+    return comment('old', url.pathname.split('/').at(-1), 900, '', { depth: 1 });
+  });
+  await page.getByRole('button', { name: 'Comment stream', exact: true }).click();
+  await expect(page.locator('[data-rcs-flat-comment]')).toHaveCount(6);
+  expect(peak).toBe(1);
+  expect(completed).toBe(3);
+  expect(page.url()).toBe(originalURL);
+  expect(await page.evaluate(() => window.inlineRuns)).toBe(3);
+});
+
+test('a rate limit pauses queued starts and slows subsequent continuation loads', async ({ page }) => {
+  const attempts = new Map();
+  const starts = [];
+  const body = ['a','b','c'].map(id => comment('new', id, 100, continuation('new', id))).join('');
+  await install(page, 'new', body, url => {
+    const id = url.pathname.split('/').filter(Boolean).at(-1);
+    const attempt = (attempts.get(id) || 0) + 1;
+    attempts.set(id, attempt);
+    starts.push(Date.now());
+    if (id === 'a' && attempt === 1) return { status: 429, headers: { 'Retry-After': '1' } };
+    return pageHTML('new', comment('new', id, 100, comment('new', `child${id}`, 900, '', { depth: 1 })));
+  });
+  await page.getByRole('button', { name: 'Comment stream', exact: true }).click();
+  await expect(page.locator('[data-rcs-flat-comment]')).toHaveCount(6);
+  expect(attempts.get('a')).toBe(2);
+  expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(1900);
+  expect(starts.slice(2).every((time, i) => time - starts[i + 1] >= 900)).toBe(true);
+  await expect(page.getByRole('status')).not.toContainText('Partial');
+});
 
 test('mobile reveal runs once and delayed lazy loaders finish before sorting', async ({ page }) => {
   const { requests } = await install(page, 'new', comment('new', 'parent', 100) + '<button id="native-reveal">View more comments</button>', () => comment('new', 'lazy', 900));

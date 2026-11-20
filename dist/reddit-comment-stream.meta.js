@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Comment Stream
 // @namespace    https://github.com/sayhiben/reddit-comment-stream
-// @version      1.1.0
+// @version      1.1.1
 // @description  Reveal and sort native Reddit comments newest first, preserving their controls and threaded context.
 // @author       sayhiben
 // @license      MIT

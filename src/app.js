@@ -131,8 +131,8 @@ import styles from './styles.css';
         const loader = new NativeLoader(adapter, {
           signal: controller.signal,
           expand: () => order.expand(),
-          onProgress: ({ count, pending, requests }) => {
-            if (!disposed && run === generation) status.textContent = `Loading · ${count.toLocaleString()} native comments · ${pending} reply loaders · ${requests} requests`;
+          onProgress: ({ count, pending, active = 0 }) => {
+            if (!disposed && run === generation) status.textContent = `Loading · ${count.toLocaleString()} native comments · ${pending} branches left · ${active} loading`;
           },
         });
         lastResult = await loader.load({ refresh });

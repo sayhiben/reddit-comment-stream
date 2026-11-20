@@ -65,7 +65,11 @@ New comments that Reddit inserts while the stream is active are also sorted. The
 
 ## How collection works
 
-The loader uses the page's existing session and Reddit's own “more replies,” “View more comments,” and lazy-loading controls. Some of these use Reddit's native POST requests to read more comments. To activate lazy pages, loading may scroll the comment area. Requests are initiated sequentially, at least one second apart. A brief settling interval lets Reddit expose additional loaders after rendering.
+The loader uses the page's existing session and Reddit's own “more replies,” “View more comments,” and lazy-loading controls. Some of these use Reddit's native POST requests to read more comments. To activate lazy pages, loading may scroll the comment area.
+
+On current Reddit, up to **three independent branches** can load together. Controls in the same branch or an ancestor/descendant branch wait their turn, and mobile controls that replace the whole tree run alone. Loading actions start at least 350 ms apart; the loader watches each branch's actual DOM changes instead of adding a fixed pause after every reply load. It only scrolls when needed, and retains a settling interval at the end to catch delayed loaders before sorting.
+
+Old Reddit's native reply loads remain sequential because its [`morechildren` endpoint permits one request at a time](https://www.reddit.com/dev/api/#GET_api_morechildren). It benefits from the shorter waits too. Explicit continuation fetches that receive a rate limit or server error pause queued starts, increase spacing, and reduce subsequent concurrency. Cancellation stops queued actions immediately; already-started native requests may still finish.
 
 For deep “continue this thread” links, it fetches the same-origin continuation page in the background and imports additional **native Reddit comment markup**, preserving its parent relationships. It skips comments already present, retains native controls, and discards fetched page scripts. It then attempts loaders inside those newly added branches. Your browser's location does not change.
 
@@ -97,6 +101,8 @@ npm run test:browser
 `src/` contains the source; `dist/` contains installable bundles and update metadata. Rebuild the bundles after source changes. Automated tests use controlled Reddit-shaped responses so hidden replies, deep continuations, failure handling, and navigation can be exercised repeatably.
 
 See [compatibility and manual verification](docs/COMPATIBILITY.md) for the distinction between browser-engine testing and testing an installed userscript on a real device.
+
+To compare native loading performance with v1.1.0, run `git fetch --tags` and `npm run benchmark` after building. The benchmark uses identical native controls, comments, and simulated response delays for both versions, and verifies that the original nodes restore. The [recorded comparison](docs/COMPATIBILITY.md#controlled-performance-comparison) took 63% less loading time on current Reddit and 36% less on old Reddit; real Reddit timings vary.
 
 To prepare release downloads after building, run `python scripts/package-release.py` (Python 3, standard library only). It puts the three standalone scripts, the universal-only iOS ZIP, and SHA-256 checksums in `release/`. Upload those files as GitHub Release assets so the download links above serve attachments; keep raw install and metadata URLs available for extension installation and updates.
 
