@@ -2,7 +2,9 @@
 
 Review a Reddit post as a flat stream of comments, newest first, with each comment's reply context one tap away. The userscripts work with both old Reddit and the current Reddit web interface.
 
-**[Install the universal userscript](https://raw.githubusercontent.com/sayhiben/reddit-comment-stream/main/dist/reddit-comment-stream.user.js)**
+**[Install through your userscript extension](https://raw.githubusercontent.com/sayhiben/reddit-comment-stream/main/dist/reddit-comment-stream.user.js)** · **[Download ZIP for iOS / Files](https://github.com/sayhiben/reddit-comment-stream/releases/latest/download/reddit-comment-stream-ios.zip)**
+
+The install link displays JavaScript source until your userscript extension handles it. For a file you can save on iPhone or iPad, use the ZIP download.
 
 This is a read-only moderation companion. It opens its own reading view and leaves Reddit's native comment tree available for replying, voting, and moderation actions.
 
@@ -10,11 +12,11 @@ This is a read-only moderation companion. It opens its own reading view and leav
 
 Choose **one** setup:
 
-| Script | Where it runs |
-| --- | --- |
-| [Universal — recommended](https://raw.githubusercontent.com/sayhiben/reddit-comment-stream/main/dist/reddit-comment-stream.user.js) | Both old and new Reddit |
-| [Old Reddit only](https://raw.githubusercontent.com/sayhiben/reddit-comment-stream/main/dist/reddit-comment-stream-old.user.js) | `old.reddit.com`, `np.reddit.com` |
-| [New Reddit only](https://raw.githubusercontent.com/sayhiben/reddit-comment-stream/main/dist/reddit-comment-stream-new.user.js) | Current Reddit hosts |
+| Script / extension install | Download file | Where it runs |
+| --- | --- | --- |
+| [Universal — recommended](https://raw.githubusercontent.com/sayhiben/reddit-comment-stream/main/dist/reddit-comment-stream.user.js) | [`.user.js`](https://github.com/sayhiben/reddit-comment-stream/releases/latest/download/reddit-comment-stream.user.js) · [iOS ZIP](https://github.com/sayhiben/reddit-comment-stream/releases/latest/download/reddit-comment-stream-ios.zip) | Both old and new Reddit |
+| [Old Reddit only](https://raw.githubusercontent.com/sayhiben/reddit-comment-stream/main/dist/reddit-comment-stream-old.user.js) | [`.user.js`](https://github.com/sayhiben/reddit-comment-stream/releases/latest/download/reddit-comment-stream-old.user.js) | `old.reddit.com`, `np.reddit.com` |
+| [New Reddit only](https://raw.githubusercontent.com/sayhiben/reddit-comment-stream/main/dist/reddit-comment-stream-new.user.js) | [`.user.js`](https://github.com/sayhiben/reddit-comment-stream/releases/latest/download/reddit-comment-stream-new.user.js) | Current Reddit hosts |
 
 Install the universal script, or install the old/new pair if you prefer managing them separately. They contain the same implementation; you do not need all three.
 
@@ -28,12 +30,14 @@ Install the universal script, or install the old/new pair if you prefer managing
 
 Requires iOS / iPadOS 15.4 or newer for the reading view's modal dialogs.
 
-1. Install [Userscripts](https://github.com/quoid/userscripts#installation), open the app, and check its scripts directory.
-2. Enable its Safari extension and grant access to Reddit.
-3. Open the universal install link in Safari, open the Userscripts extension popup, and install. Alternatively, save the `.user.js` file in the configured scripts directory.
-4. Return to the Reddit post in Safari and reload it. Use the web page, not the Reddit app.
+1. Install [Userscripts](https://github.com/quoid/userscripts#installation), open the app, and note or choose its **Userscripts Directory**.
+2. Open **[Download ZIP for iOS](https://github.com/sayhiben/reddit-comment-stream/releases/latest/download/reddit-comment-stream-ios.zip)** in **Safari** and confirm **Download** if prompted. If you are viewing this inside another app, open the link in Safari first.
+3. Open **Files → Browse → Downloads** and tap `reddit-comment-stream-ios.zip` to extract it. Open the extracted folder, touch and hold `reddit-comment-stream.user.js`, choose **Move**, and put it directly in the directory selected in Userscripts. Keep the `.user.js` filename. The ZIP contains only the universal script, which covers both Reddit layouts.
+4. Enable the **Userscripts** Safari extension, allow it on Reddit, and reload a Reddit post in Safari. Tap **Comment stream**. Use the web page, not the Reddit app.
 
-These installation methods are documented by [Userscripts](https://github.com/quoid/userscripts#usage).
+Apple documents [finding Safari downloads](https://support.apple.com/102440), [extracting ZIP files](https://support.apple.com/102532), and [moving files](https://support.apple.com/guide/iphone/files-basics-iphe9d46e90f/ios).
+
+**Alternative without using Files:** open the [raw `.user.js` install link](https://raw.githubusercontent.com/sayhiben/reddit-comment-stream/main/dist/reddit-comment-stream.user.js) in Safari. Seeing script source is normal. While that page is open, open Safari's **Extensions** menu, choose **Userscripts**, and use its installation prompt; allow access to that page if requested. This flow and the directory-based method are documented by [Userscripts](https://github.com/quoid/userscripts#usage).
 
 ### Android
 
@@ -86,6 +90,8 @@ npm run test:browser
 `src/` contains the source; `dist/` contains installable bundles and update metadata. Rebuild the bundles after source changes. Automated tests use controlled Reddit-shaped responses so hidden replies, deep continuations, failure handling, and navigation can be exercised repeatably.
 
 See [compatibility and manual verification](docs/COMPATIBILITY.md) for the distinction between browser-engine testing and testing an installed userscript on a real device.
+
+To prepare release downloads after building, run `python scripts/package-release.py` (Python 3, standard library only). It puts the three standalone scripts, the universal-only iOS ZIP, and SHA-256 checksums in `release/`. Upload those files as GitHub Release assets so the download links above serve attachments; keep raw install and metadata URLs available for extension installation and updates.
 
 ## License
 
