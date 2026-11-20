@@ -6,7 +6,7 @@ Review a Reddit post as a flat stream of comments, newest first, with each comme
 
 The install link displays JavaScript source until your userscript extension handles it. For a file you can save on iPhone or iPad, use the ZIP download.
 
-This is a read-only moderation companion. It opens its own reading view and leaves Reddit's native comment tree available for replying, voting, and moderation actions.
+The script rearranges **Reddit's existing comment elements in place**. Comment bodies, media, votes, reply forms, menus, and moderation controls stay attached to their original comments. Draft text and event handlers survive the move. The **Comment stream** button sits beside the post's comment sorting controls, or directly below the post on layouts without those controls.
 
 ## Install
 
@@ -28,13 +28,13 @@ Install the universal script, or install the old/new pair if you prefer managing
 
 ### iPhone and iPad Safari
 
-Requires iOS / iPadOS 15.4 or newer for the reading view's modal dialogs.
+Targets iOS / iPadOS Safari 15.4 or newer.
 
 1. Install [Userscripts](https://github.com/quoid/userscripts#installation), open the app, and note or choose its **Userscripts Directory**.
 2. Open **[Download ZIP for iOS](https://github.com/sayhiben/reddit-comment-stream/releases/latest/download/reddit-comment-stream-ios.zip)** in **Safari** and confirm **Download** if prompted. If you are viewing this inside another app, open the link in Safari first.
 3. Open **Files → Browse → Downloads** and tap `reddit-comment-stream-ios.zip` to extract it. Open the extracted folder, touch and hold `reddit-comment-stream.user.js`, choose **Move**, and put it directly in the directory selected in Userscripts. Keep the `.user.js` filename. The ZIP contains only the universal script, which covers both Reddit layouts.
 4. Enable the **Userscripts** Safari extension and allow it on Reddit. On the Reddit page, open **Safari → Extensions → Userscripts** and let the popup finish loading. **This step is required after copying or replacing a file:** it makes Userscripts rescan its folder. Confirm **Reddit Comment Stream** is listed and enabled, then close the popup and reload the Reddit page.
-5. Look for the teal **Comment stream** button at the bottom-right of the page. Use Safari itself, not the Reddit app or another app's embedded browser.
+5. Look for **Comment stream** beside the post's comment sorting controls, or directly below the post on mobile layouts without a sort control. Use Safari itself, not the Reddit app or another app's embedded browser.
 
 Apple documents [finding Safari downloads](https://support.apple.com/102440), [extracting ZIP files](https://support.apple.com/102532), and [moving files](https://support.apple.com/guide/iphone/files-basics-iphe9d46e90f/ios).
 
@@ -52,33 +52,35 @@ Use **Firefox for Android + Tampermonkey** instead: [Tampermonkey's Mozilla list
 
 ## Use
 
-1. Open a Reddit post and activate **Comment stream**.
-2. Let the loader finish. It gathers the post's comments and expands available hidden branches before showing the sorted stream.
-3. Open a comment's **…** menu and choose **View context** to see its place in the reply hierarchy. Use the native Reddit link when you want Reddit's own controls.
-4. Use **Refresh** to collect a fresh snapshot of the thread. Use **Stop loading** if you need to review the comments already collected; that result is marked partial.
+1. Open a Reddit post and activate **Comment stream** in the post's controls.
+2. Let loading finish. The script opens collapsed comments, activates native reply loaders and lazy comment pages, and attempts deep continuation pages before sorting the comments already on the page.
+3. Read and use the native comments in newest-first order, including their existing reply, menu, vote, and moderation controls.
+4. Choose **View context** alongside a comment's actions to restore the actual Reddit hierarchy and highlight that comment. **Back to comment stream** returns to the sorted order without another fetch.
+5. Use **Load new comments** to fetch the post again and merge newly available native comments. Existing comments and drafts are retained. Use **Stop loading** to sort the comments revealed so far; the result is marked partial.
+6. **Normal view**, or the floating **Return to normal view** button, restores each comment's original position and collapse state. The floating return button appears only while comments are flattened.
 
-The order is based on comment creation time, so a new reply deep inside an old branch appears near the top. Editing a comment does not move it to the top. Long results are initially displayed 100 at a time after collection to keep the interface responsive on phones. **Show more** appends the next 100; it does not limit collection.
+Ordering uses comment creation time, so a new reply deep inside an old branch appears near the top. Editing a comment does not change its position. Comments without usable timestamps appear last. All loaded native comments remain in the document; there is no separate reader, filter, or pagination layer.
 
-**View context** shows the ancestor chain, selected comment, and direct replies, with a link to the native branch. Filter by author or comment text to narrow a large stream. **NEW** badges identify comments first seen on a refresh during the current reading session.
+New comments that Reddit inserts while the stream is active are also sorted. The script does not poll the server continuously; use **Load new comments** when checking for new activity. Returning to normal while loading cancels sorting; a native request already in flight may still finish adding replies in their normal positions.
 
 ## How collection works
 
-The script reads Reddit's comment JSON using your existing browser session. It follows `more` placeholders through `/api/morechildren` and fetches focused comment listings for deep “continue this thread” branches without navigating the browser away. Requests run sequentially with pacing and retry handling. Reddit documents the comment listing and expansion endpoints in its [API reference](https://www.reddit.com/dev/api/).
+The loader uses the page's existing session and Reddit's own “more replies,” “View more comments,” and lazy-loading controls. Some of these use Reddit's native POST requests to read more comments. To activate lazy pages, loading may scroll the comment area. Requests are initiated sequentially, at least one second apart. A brief settling interval lets Reddit expose additional loaders after rendering.
 
-The loader deduplicates comments and keeps parent IDs for context. It attempts to exhaust the branches Reddit supplies; it does not deliberately stop at a fixed comment count. Large discussions can take several minutes. Keep the tab open while loading; mobile browsers can suspend background tabs.
+For deep “continue this thread” links, it fetches the same-origin continuation page in the background and imports additional **native Reddit comment markup**, preserving its parent relationships. It skips comments already present, retains native controls, and discards fetched page scripts. It then attempts loaders inside those newly added branches. Your browser's location does not change.
 
-**A completed traversal is not a guarantee that Reddit exposed every comment.** Deleted or inaccessible comments, moderator visibility, blocked accounts, API errors, rate limits, and comments arriving during collection can produce gaps. Partial results and unresolved branches are reported instead of being silently treated as complete. Refresh after loading a very active post to take a newer snapshot.
+The loader attempts the branches Reddit supplies without a fixed comment-count limit. Repeated cursors and nonprogressing loaders are not retried endlessly. Explicit page requests have timeouts, pacing, and retries for rate limits and server errors. Large discussions can take several minutes. Keep the tab in the foreground on mobile.
 
-If Reddit denies a JSON request, confirm that you can open the post in the same browser and account, then try again later. The script does not bypass access restrictions or recover content that Reddit has withheld.
+**A completed traversal does not guarantee every comment was exposed.** Inaccessible or removed comments, moderator visibility, access challenges, rate limits, and comments arriving during loading can leave gaps. Unexpanded branches, denied pages, and mismatches with Reddit's reported count are shown as partial coverage. Some Reddit page variants do not return usable native comment markup when fetched; those branches remain available through their original links.
 
 ## Privacy and permissions
 
-- All runtime requests go to the Reddit origin you are visiting, using that origin's normal session cookies.
-- The scripts do not send comments or account data to an external service.
-- They perform read requests only; they do not approve, remove, report, vote, or post.
+- Requests initiated by the script go to the Reddit origin you are visiting, using its normal session cookies. Reddit's own components and media continue their usual requests.
+- The script does not send comments or account data to an external service.
+- Automatic actions only expand and load comments. The script does not automatically approve, remove, report, vote, or post. **The preserved native controls still perform their normal actions when you use them.**
 - Each install file is self-contained, with `@grant none` and no remote runtime dependencies. Your userscript manager may check GitHub for script updates.
-- Comment formatting passes through an allowlist. Embedded images become links, avoiding automatic media requests; plain text is used if the page blocks HTML parsing.
-- The reading view is a snapshot. Use Reddit's native page to verify current moderation state before acting.
+- Existing comments retain their native formatting and media. Imported continuation markup has scripts and embedded executable documents removed; event attributes and unsafe links are stripped from comment bodies. Old Reddit's own control handlers are retained.
+- Refresh merges newly discovered comments; it does not replace existing comments with a fetched snapshot. Reddit remains responsible for updating vote and moderation state through its controls.
 
 ## Development and verification
 

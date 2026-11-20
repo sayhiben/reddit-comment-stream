@@ -1,8 +1,8 @@
 {
   "name": "reddit-comment-stream",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
-  "description": "A newest-first, context-preserving Reddit comment reader for userscript managers.",
+  "description": "Flatten Reddit's native comments newest first while preserving their controls and threaded context.",
   "type": "module",
   "license": "MIT",
   "engines": { "node": ">=20" },

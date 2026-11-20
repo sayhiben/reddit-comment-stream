@@ -16,7 +16,7 @@ for (const [file, name, hosts] of variants) {
     `// @name         ${name}`,
     '// @namespace    https://github.com/sayhiben/reddit-comment-stream',
     `// @version      ${version}`,
-    '// @description  Load available Reddit replies, then read every level newest first with threaded context.',
+    '// @description  Reveal and sort native Reddit comments newest first, preserving their controls and threaded context.',
     '// @author       sayhiben',
     '// @license      MIT',
     '// @homepageURL  https://github.com/sayhiben/reddit-comment-stream',

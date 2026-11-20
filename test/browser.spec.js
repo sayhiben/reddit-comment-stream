@@ -1,283 +1,264 @@
 import { test, expect } from '@playwright/test';
-import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
-
+import { fileURLToPath } from 'node:url';
+import { comment, more, continuation, pageHTML, path } from './fixtures.js';
 const scriptPath = fileURLToPath(new URL('../dist/reddit-comment-stream.user.js', import.meta.url));
-const postPath = '/r/test/comments/abc123/a_post/';
-const reportedURL = 'https://www.reddit.com/r/Seattle/comments/1y0m3pi/i_love_these_mushrooms/';
+const selector = 'shreddit-comment[thingid], .thing.comment[data-fullname]';
+const nodeFor = (page, id) => page.locator(`[thingid="t1_${id}"],.thing.comment[data-fullname="t1_${id}"]`);
+const ids = page => page.locator('[data-rcs-flat-comment]').evaluateAll(nodes => nodes.map(node => node.getAttribute('thingid') || node.dataset.fullname));
 
-function comment(id, created, body, replies = [], parent = 't3_abc123', extra = {}) {
-  return {
-    kind: 't1',
-    data: {
-      id, name: `t1_${id}`, parent_id: parent, link_id: 't3_abc123',
-      author: `author_${id}`, created_utc: created, body,
-      body_html: `<div class="md"><p>${body}</p></div>`, score: 1,
-      permalink: `${postPath}${id}/`,
-      replies: replies.length ? { kind: 'Listing', data: { children: replies, after: null } } : '',
-      ...extra,
-    },
-  };
-}
-
-function more(children, parent = 't3_abc123', count = children.length) {
-  return { kind: 'more', data: { id: children[0] || '_', children, parent_id: parent, count } };
-}
-
-function listing(children, count = null, id = 'abc123') {
-  return [
-    { kind: 'Listing', data: { children: [{ kind: 't3', data: {
-      id, name: `t3_${id}`, title: 'A busy moderation thread', subreddit: 'test',
-      num_comments: count, permalink: postPath,
-    } }], after: null } },
-    { kind: 'Listing', data: { children, after: null } },
-  ];
-}
-
-async function install(page, { host = 'www.reddit.com', respond } = {}) {
+async function install(page, kind, body, respond = () => '', options = {}) {
+  const host = kind === 'old' ? 'old.reddit.com' : 'www.reddit.com';
   const requests = [];
   await page.route('**/*', async route => {
     const request = route.request();
     const url = new URL(request.url());
-    requests.push({ url, method: request.method(), type: request.resourceType() });
-    if (url.hostname.endsWith('reddit.com') && request.resourceType() === 'document') {
-      await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><head><title>Fixture Reddit</title>${host !== 'old.reddit.com' ? '<meta name="viewport" content="width=device-width, initial-scale=1">' : ''}</head><body>
-        <header>Reddit fixture</header><main id="native"><h1>A busy moderation thread</h1>
-        ${host === 'old.reddit.com' ? '<div class="commentarea"><div class="sitetable nestedlisting"><div class="thing comment">Original thread</div></div></div>' : '<shreddit-post post-id="t3_abc123"></shreddit-post><shreddit-comment-tree><shreddit-comment thingid="t1_parent">Original thread</shreddit-comment></shreddit-comment-tree>'}
-        </main></body></html>` });
-    } else if (url.hostname === host && (url.pathname.endsWith('.json') || url.pathname.includes('/api/morechildren'))) {
-      const response = await respond(url, request);
-      if (response?.status) {
-        await route.fulfill({ status: response.status, contentType: 'application/json', body: JSON.stringify(response.body || {}), headers: response.headers });
-      } else {
-        await route.fulfill({ contentType: 'application/json', body: JSON.stringify(response) }).catch(() => {});
-      }
-    } else {
-      await route.abort();
-    }
+    requests.push({ path: url.pathname, method: request.method(), type: request.resourceType() });
+    if (request.resourceType() === 'document') return route.fulfill({ contentType: 'text/html', body: pageHTML(kind, body, options) });
+    const response = await respond(url);
+    if (typeof response === 'object') return route.fulfill({ status: response.status, body: response.body || '', headers: response.headers }).catch(() => {});
+    return route.fulfill({ contentType: 'text/html', body: response }).catch(() => {});
   });
-  await page.goto(`https://${host}${postPath}`);
+  await page.goto(`https://${host}${path}`);
   await page.addScriptTag({ path: scriptPath });
-  await page.getByRole('button', { name: 'Comment stream', exact: true }).click();
-  return { requests, stream: page.getByRole('dialog', { name: 'Reddit comment stream', exact: true }) };
-}
-
-const ids = locator => locator.locator('article[data-comment-id]').evaluateAll(nodes => nodes.map(node => node.dataset.commentId));
-
-test('starts at DOM readiness without waiting for slow page resources', async ({ page }) => {
-  const code = await readFile(scriptPath, 'utf8');
-  const runAt = code.match(/^\/\/ @run-at\s+(\S+)/m)?.[1];
-  let release;
-  const resource = new Promise(resolve => { release = resolve; });
-  await page.route('**/*', async route => {
-    if (route.request().resourceType() === 'document') {
-      await route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width"><title>Thread</title><img src="/slow-image.png">' });
-    } else {
-      await resource;
-      await route.abort().catch(() => {});
-    }
-  });
-  // Model the manager's metadata-based lifecycle dispatch. This is not a test
-  // of the installed iOS extension; it catches scripts waiting for window load.
-  await page.addInitScript(({ code, runAt }) => {
-    const event = runAt === 'document-end' ? 'DOMContentLoaded' : 'load';
-    window.addEventListener(event, () => (0, eval)(code), { once: true });
-  }, { code, runAt });
-  try {
-    await page.goto(reportedURL, { waitUntil: 'domcontentloaded' });
-    expect(await page.evaluate(() => document.readyState)).toBe('interactive');
-    const launcher = page.getByRole('button', { name: 'Comment stream', exact: true });
-    await expect(launcher).toBeVisible();
-    await launcher.click();
-    await expect(page.getByRole('dialog', { name: 'Reddit comment stream', exact: true })).toBeVisible();
-  } finally { release(); }
-});
-
-test('recovers when injected during document replacement and restores a removed host', async ({ page }) => {
-  await page.route('**/*', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width"><title>Thread</title><main>Thread</main>' }));
-  await page.goto(reportedURL);
-  const code = await readFile(scriptPath, 'utf8');
-  await page.evaluate(code => {
-    const root = document.documentElement;
-    root.remove();
-    try { (0, eval)(code); } finally { document.append(root); }
-  }, code);
-  const launcher = page.getByRole('button', { name: 'Comment stream', exact: true });
-  await expect(launcher).toBeVisible();
-  await page.evaluate(() => document.getElementById('reddit-comment-stream-host').remove());
-  await expect(launcher).toBeVisible();
-  await page.evaluate(code);
-  await expect(launcher).toHaveCount(1);
-});
-
-test('uses content-context startup on a page that rejects inline script tags', async ({ page }) => {
-  await page.route('**/*', route => route.fulfill({
-    contentType: 'text/html',
-    headers: { 'Content-Security-Policy': "script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'" },
-    body: '<!doctype html><meta name="viewport" content="width=device-width"><title>Thread</title><main>Thread</main>',
-  }));
-  await page.goto(reportedURL);
-  const code = await readFile(scriptPath, 'utf8');
-  const context = code.match(/^\/\/ @inject-into\s+(\S+)/m)?.[1];
-  // Remote evaluation supplies the test's privileged entry point, analogous
-  // to a manager's isolated content world. Physical Safari injection is separate.
-  if (context === 'content') await page.evaluate(code);
-  else await page.addScriptTag({ content: code }).catch(() => {});
   await expect(page.getByRole('button', { name: 'Comment stream', exact: true })).toBeVisible();
-});
+  return { requests, url: `https://${host}${path}` };
+}
 
-for (const host of ['old.reddit.com', 'www.reddit.com']) {
-  test(`flattens nested comments by creation time on ${host}`, async ({ page }, testInfo) => {
-    const child = comment('child', 300, 'Questionable reply', [comment('grandchild', 500, 'Latest nested reply', [], 't1_child')], 't1_parent');
-    const { stream, requests } = await install(page, { host, respond: () => listing([
-      comment('parent', 100, 'Original parent', [child]), comment('sibling', 400, 'Another top level comment'),
-    ], 4) });
-    await expect.poll(() => ids(stream)).toEqual(['t1_grandchild', 't1_sibling', 't1_child', 't1_parent']);
-    await page.screenshot({ path: `test-results/preview-${testInfo.project.name}-${host}.png` });
-    const box = await stream.boundingBox();
-    const viewport = page.viewportSize();
-    expect(box.x).toBeGreaterThanOrEqual(-1);
-    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
-    await stream.locator('[data-comment-id="t1_child"]').getByLabel('More actions for comment t1_child').click();
-    await stream.locator('[data-comment-id="t1_child"]').getByRole('button', { name: 'View context', exact: true }).click();
-    const context = page.getByRole('dialog', { name: 'Comment context', exact: true });
-    await expect(context).toBeVisible();
-    await expect(context).toContainText('Original parent');
-    await expect(context).toContainText('Questionable reply');
-    await expect(context).toContainText('Latest nested reply');
-    await page.screenshot({ path: `test-results/context-${testInfo.project.name}-${host}.png` });
-    const link = context.getByRole('link', { name: 'Open on Reddit', exact: true }).first();
-    await expect(link).toHaveAttribute('target', '_blank');
-    expect(page.url()).toBe(`https://${host}${postPath}`);
-    await context.getByRole('button', { name: 'Back to stream', exact: true }).click();
-    await expect(context).not.toBeVisible();
-    await stream.getByRole('button', { name: 'Close', exact: true }).click();
-    await expect(stream).not.toBeVisible();
-    await expect(page.locator('#native')).toContainText('Original thread');
-    if (host === 'old.reddit.com') {
-      await expect(page.locator('meta[name="viewport"]')).toHaveCount(0);
-    } else {
-      await expect(page.locator('meta[name="viewport"]')).toHaveAttribute('content', 'width=device-width, initial-scale=1');
+for (const kind of ['old', 'new']) {
+  test(`${kind}: reorders original nodes, preserves controls and drafts, and exactly restores hierarchy`, async ({ page }, info) => {
+    const body = comment(kind, 'parent', 100, comment(kind, 'child', 300, comment(kind, 'grand', 500, '', { depth: 2 }), { depth: 1 })) + comment(kind, 'sibling', 400);
+    await install(page, kind, body);
+    const launcher = page.getByRole('button', { name: 'Comment stream', exact: true });
+    expect(await launcher.evaluate(node => getComputedStyle(node).position)).not.toBe('fixed');
+    expect(await page.locator('#reddit-comment-stream-host').evaluate(node => node.previousElementSibling.matches('.menuarea,shreddit-comments-sort-dropdown'))).toBe(true);
+    await expect(page.getByRole('button', { name: 'Return to normal view', exact: true })).toBeHidden();
+    await nodeFor(page, 'child').getByRole('button', { name: 'Reply child', exact: true }).click();
+    await page.getByLabel('Draft child', { exact: true }).fill('Unsent moderator reply');
+    await page.evaluate(selector => {
+      window.originals=[...document.querySelectorAll(selector)].map(node=>({node,parent:node.parentNode,slot:node.getAttribute('slot'),depth:node.getAttribute('depth'),vote:node.querySelector('.vote'),draft:node.querySelector('textarea')}));
+    }, selector);
+    await launcher.click();
+    await expect.poll(() => ids(page)).toEqual(['t1_grand','t1_sibling','t1_child','t1_parent']);
+    expect(await page.evaluate(() => window.originals.every(x=>x.node.isConnected&&x.vote===x.node.querySelector('.vote')&&x.draft===x.node.querySelector('textarea')))).toBe(true);
+    await expect(page.getByLabel('Draft child', { exact: true })).toHaveValue('Unsent moderator reply');
+    await nodeFor(page, 'child').getByRole('button', { name: 'Vote child', exact: true }).click();
+    await nodeFor(page, 'child').getByRole('button', { name: 'More child', exact: true }).click();
+    await expect(nodeFor(page, 'child').locator('.native-menu-content')).toBeVisible();
+    await nodeFor(page, 'child').getByRole('button', { name: 'Remove child', exact: true }).click();
+    await expect(nodeFor(page, 'child')).toHaveAttribute('data-moderated', 'removed');
+    expect(await page.evaluate(() => window.nativeDirectClicks)).toBe(1);
+    expect(await page.evaluate(() => window.nativeEvents)).toContain('Vote child');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.screenshot({ path: `test-results/native-${kind}-${info.project.name}.png` });
+    await page.getByRole('button', { name: 'Return to normal view', exact: true }).click();
+    expect(await page.evaluate(() => window.originals.every(x=>x.node.parentNode===x.parent&&x.node.getAttribute('slot')===x.slot&&x.node.getAttribute('depth')===x.depth))).toBe(true);
+    await expect(page.getByLabel('Draft child', { exact: true })).toHaveValue('Unsent moderator reply');
+    await expect(page.locator('[data-rcs-flat-comment]')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Return to normal view', exact: true })).toBeHidden();
+  });
+
+  test(`${kind}: context restores the native hierarchy and can resume the same stream`, async ({ page }) => {
+    await install(page, kind, comment(kind, 'parent', 100, comment(kind, 'child', 300, comment(kind, 'grand', 500, '', { depth: 2 }), { depth: 1 })));
+    await page.getByRole('button', { name: 'Comment stream', exact: true }).click();
+    await expect.poll(() => ids(page)).toEqual(['t1_grand','t1_child','t1_parent']);
+    await page.getByRole('button', { name: 'View context for t1_child', exact: true }).click();
+    await expect(nodeFor(page, 'parent').locator('[thingid="t1_child"], [data-fullname="t1_child"]')).toHaveCount(1);
+    await expect(nodeFor(page, 'child')).toHaveAttribute('data-rcs-context', '');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Back to comment stream', exact: true }).click();
+    await expect.poll(() => ids(page)).toEqual(['t1_grand','t1_child','t1_parent']);
+  });
+
+  test(`${kind}: recursively reveals native loaders before sorting and keeps new controls`, async ({ page }) => {
+    const { requests } = await install(page, kind, comment(kind, 'parent', 100, more(kind, 'one')), url => url.pathname.endsWith('/one')
+      ? comment(kind, 'child', 300, more(kind, 'two'), { depth: 1 })
+      : comment(kind, 'grand', 500, '', { depth: 2 }));
+    await page.getByRole('button', { name: 'Comment stream', exact: true }).click();
+    await expect(page.locator('[data-rcs-flat-comment]')).toHaveCount(0);
+    await expect.poll(() => ids(page)).toEqual(['t1_grand','t1_child','t1_parent']);
+    await nodeFor(page, 'grand').getByRole('button', { name: 'Reply grand', exact: true }).click();
+    await expect(page.getByLabel('Draft grand', { exact: true })).toBeVisible();
+    expect(requests.filter(x => x.path.startsWith('/native-more/')).length).toBe(2);
+    await page.getByRole('button', { name: 'Normal view', exact: true }).click();
+    expect(await nodeFor(page, 'grand').evaluate(node => node.parentElement.closest('shreddit-comment,.thing.comment').getAttribute('thingid') || node.parentElement.closest('.thing.comment').dataset.fullname)).toBe('t1_child');
+  });
+
+  test(`${kind}: fetches continuation HTML in place without replacing originals or running scripts`, async ({ page }) => {
+    const incoming = comment(kind, 'parent', 100, comment(kind, 'deep', 900, more(kind, 'last'), { depth: 1, body: '<p onclick="window.attack=true">Deep comment</p><script>window.attack=true</script>' }));
+    const { url, requests } = await install(page, kind, comment(kind, 'parent', 100, continuation(kind, 'parent')), requested => requested.pathname.startsWith('/native-more/') ? comment(kind, 'last', 1000, '', { depth: 2 }) : pageHTML(kind, incoming));
+    await page.evaluate(() => window.keptParent=document.querySelector('shreddit-comment,.thing.comment'));
+    await page.getByRole('button', { name: 'Comment stream', exact: true }).click();
+    await expect.poll(() => ids(page)).toEqual(['t1_last','t1_deep','t1_parent']);
+    expect(page.url()).toBe(url);
+    expect(await page.evaluate(() => window.keptParent===document.querySelector('[thingid="t1_parent"],[data-fullname="t1_parent"]'))).toBe(true);
+    expect(await page.evaluate(() => window.attack)).toBeUndefined();
+    await expect(nodeFor(page, 'deep').locator('script,[onclick]')).toHaveCount(0);
+    await nodeFor(page, 'deep').getByRole('button', { name: 'Reply deep', exact: true }).click();
+    await expect(page.getByLabel('Draft deep', { exact: true })).toBeVisible();
+    expect(requests.every(x=>x.method==='GET')).toBe(true);
+  });
+
+  test(`${kind}: stop shows a partial stream and handles a late native reply`, async ({ page }) => {
+    let release;
+    const pending = new Promise(resolve => { release = resolve; });
+    let started = false;
+    await install(page, kind, comment(kind, 'parent', 100, more(kind, 'slow')), async () => { started = true; await pending; return comment(kind, 'late', 900, '', { depth: 1 }); });
+    await page.getByRole('button', { name: 'Comment stream', exact: true }).click();
+    await expect.poll(()=>started).toBe(true);
+    await page.getByRole('button', { name: 'Stop loading', exact: true }).click();
+    await expect.poll(() => ids(page)).toEqual(['t1_parent']);
+    await expect(page.getByRole('status')).toContainText('Partial');
+    release();
+    await expect.poll(() => ids(page)).toEqual(['t1_late','t1_parent']);
+    await page.getByRole('button', { name: 'Normal view', exact: true }).click();
+    await expect(nodeFor(page, 'parent').locator('[thingid="t1_late"],[data-fullname="t1_late"]')).toHaveCount(1);
+  });
+
+  test(`${kind}: loading a refreshed page adds new comments and preserves existing drafts`, async ({ page }) => {
+    const incoming = comment(kind, 'parent', 100, comment(kind, 'recent', 999, '', { depth: 1 }));
+    await install(page, kind, comment(kind, 'parent', 100), () => pageHTML(kind, incoming));
+    await page.getByRole('button', { name: 'Reply parent', exact: true }).click();
+    await page.getByLabel('Draft parent').fill('Keep my draft');
+    await page.getByRole('button', { name: 'Comment stream', exact: true }).click();
+    await expect.poll(() => ids(page)).toEqual(['t1_parent']);
+    await page.getByRole('button', { name: 'Load new comments', exact: true }).click();
+    await expect.poll(() => ids(page)).toEqual(['t1_recent','t1_parent']);
+    await expect(page.getByLabel('Draft parent')).toHaveValue('Keep my draft');
+  });
+
+  test(`${kind}: returning to normal during loading cancels automatic sorting`, async ({ page }) => {
+    let release;
+    const pending = new Promise(resolve => { release = resolve; });
+    let started = false;
+    await install(page, kind, comment(kind, 'parent', 100, more(kind, 'slow')), async () => { started = true; await pending; return comment(kind, 'late', 900, '', { depth: 1 }); });
+    await page.getByRole('button', { name: 'Comment stream', exact: true }).click();
+    await expect.poll(() => started).toBe(true);
+    await page.getByRole('button', { name: 'Normal view', exact: true }).click();
+    release();
+    await expect(nodeFor(page, 'parent').locator('[thingid="t1_late"],[data-fullname="t1_late"]')).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Comment stream', exact: true })).toBeEnabled();
+    await expect(page.locator('[data-rcs-flat-comment]')).toHaveCount(0);
+  });
+
+  test(`${kind}: restores collapse state and the original slot after a native comment replacement`, async ({ page }) => {
+    await install(page, kind, comment(kind, 'parent', 100, comment(kind, 'child', 300, '', { depth: 1 }), { collapsed: true }));
+    await page.getByRole('button', { name: 'Comment stream', exact: true }).click();
+    await expect.poll(() => ids(page)).toEqual(['t1_child', 't1_parent']);
+    await nodeFor(page, 'child').evaluate(node => {
+      const replacement = node.cloneNode(true);
+      replacement.querySelector('.rcs-context-action, .rcs-context-button')?.remove();
+      node.replaceWith(replacement);
+    });
+    await expect(page.getByRole('button', { name: 'View context for t1_child', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Normal view', exact: true }).click();
+    await expect(nodeFor(page, 'parent').locator('[thingid="t1_child"],[data-fullname="t1_child"]')).toHaveCount(1);
+    if (kind === 'old') await expect(nodeFor(page, 'parent')).toHaveClass(/collapsed/);
+    else {
+      expect(await nodeFor(page, 'parent').locator('details').first().evaluate(node => node.open)).toBe(false);
+      await expect(nodeFor(page, 'child')).toHaveAttribute('depth', '1');
     }
-    expect(requests.every(request => request.method === 'GET')).toBe(true);
+    await expect(page.locator('[data-rcs-flat-comment]')).toHaveCount(0);
   });
 }
 
-test('loads morechildren and deep continuations before rendering sorted comments', async ({ page }) => {
-  let sawMore = false;
-  let sawDeep = false;
-  const { stream } = await install(page, { respond: url => {
-    if (url.pathname.includes('/api/morechildren')) {
-      sawMore = true;
-      expect(url.searchParams.get('children')).toBe('hidden');
-      return { json: { errors: [], data: { things: [comment('hidden', 300, 'Hidden top level')] } } };
-    }
-    if (url.searchParams.has('comment')) {
-      sawDeep = true;
-      expect(url.searchParams.get('comment')).toBe('parent');
-      return listing([comment('parent', 100, 'Parent', [comment('deep', 900, 'Deep newest reply', [], 't1_parent')])], 3);
-    }
-    return listing([comment('parent', 100, 'Parent', [more([], 't1_parent', 0)]), more(['hidden'])], 3);
-  } });
-  await expect(stream.getByRole('button', { name: 'Stop loading', exact: true })).toBeVisible();
-  await expect(stream.locator('article[data-comment-id]')).toHaveCount(0);
-  await expect.poll(() => ids(stream), { timeout: 30_000 }).toEqual(['t1_deep', 't1_hidden', 't1_parent']);
-  expect(sawMore).toBe(true);
-  expect(sawDeep).toBe(true);
-});
-
-test('stopping loading preserves a clearly partial readable result', async ({ page }) => {
-  let moreRequested = false;
-  let release;
-  const pending = new Promise(resolve => { release = resolve; });
-  const { stream } = await install(page, { respond: async url => {
-    if (url.pathname.includes('/api/morechildren')) {
-      moreRequested = true;
-      await pending;
-      return { json: { errors: [], data: { things: [] } } };
-    }
-    return listing([comment('parent', 100, 'Available before stopping'), more(['hidden'])], 2);
-  } });
-  await expect.poll(() => moreRequested).toBe(true);
-  await stream.getByRole('button', { name: 'Stop loading', exact: true }).click();
-  release();
-  await expect.poll(() => ids(stream)).toEqual(['t1_parent']);
-  await expect(stream.getByRole('status')).toContainText(/partial|stopped|incomplete/i);
-});
-
-test('refresh includes newly posted replies', async ({ page }) => {
-  let iteration = 0;
-  const { stream } = await install(page, { respond: () => {
-    iteration++;
-    return listing(iteration === 1 ? [comment('first', 100, 'Existing comment')] : [
-      comment('first', 100, 'Existing comment', [comment('second', 200, 'New reply', [], 't1_first')]),
-    ], iteration === 1 ? 1 : 2);
-  } });
-  await expect.poll(() => ids(stream)).toEqual(['t1_first']);
-  await stream.getByRole('button', { name: 'Refresh', exact: true }).click();
-  await expect.poll(() => ids(stream)).toEqual(['t1_second', 't1_first']);
-});
-
-test('large snapshots paginate after global sorting and search all loaded comments', async ({ page }) => {
-  const children = Array.from({ length: 205 }, (_, index) => comment(`c${index}`, index + 1,
-    index === 0 ? 'Review target in the oldest comment' : `Comment number ${index}`));
-  const { stream } = await install(page, { respond: () => listing(children, 205) });
-  await expect(stream.locator('article[data-comment-id]')).toHaveCount(100);
-  const initial = await ids(stream);
-  expect(initial[0]).toBe('t1_c204');
-  expect(initial[99]).toBe('t1_c105');
-  await stream.getByRole('button', { name: /^Show more/ }).click();
-  await expect(stream.locator('article[data-comment-id]')).toHaveCount(200);
-  expect((await ids(stream))[199]).toBe('t1_c5');
-  await stream.getByRole('searchbox', { name: 'Filter comments' }).fill('Review target');
-  await expect.poll(() => ids(stream)).toEqual(['t1_c0']);
-});
-
-test('a mismatch with Reddit\'s advertised count is visibly incomplete', async ({ page }) => {
-  const { stream } = await install(page, { respond: () => listing([comment('only', 100, 'One returned comment')], 5) });
-  await expect.poll(() => ids(stream)).toEqual(['t1_only']);
-  await expect(stream.getByRole('status')).toContainText(/partial|incomplete/i);
-  await expect(stream).toContainText('Reddit reports 5 comments');
-});
-
-test('blocked API responses remain recoverable through refresh', async ({ page }) => {
-  let blocked = true;
-  const { stream } = await install(page, { respond: () => blocked ? { status: 403 } : listing([comment('ok', 100, 'Recovered comment')], 1) });
-  await expect(stream.getByRole('status')).toContainText(/403|failed|unable|blocked|partial|error/i);
-  await expect(stream.locator('article[data-comment-id]')).toHaveCount(0);
-  blocked = false;
-  await stream.getByRole('button', { name: 'Refresh', exact: true }).click();
-  await expect.poll(() => ids(stream)).toEqual(['t1_ok']);
-});
-
-test('comment HTML is sanitized and cannot execute scripts or load tracking media', async ({ page }) => {
-  const { stream, requests } = await install(page, { respond: () => listing([comment('attack', 100, 'Safe fallback', [], 't3_abc123', {
-    body_html: '<div class="md"><p>Readable content</p><script>window.__commentAttack = true</script><img src="https://tracker.invalid/pixel" onerror="window.__commentAttack = true"><a href="javascript:window.__commentAttack=true">unsafe link</a><a href="https://example.com/">safe link</a><svg onload="window.__commentAttack=true"></svg></div>',
-  })], 1) });
-  await expect.poll(() => ids(stream)).toEqual(['t1_attack']);
-  expect(await page.evaluate(() => window.__commentAttack)).toBeUndefined();
-  expect(await stream.locator('script,iframe,svg,[onload],[onerror],a[href^="javascript:"]').count()).toBe(0);
-  expect(requests.some(request => request.url.hostname === 'tracker.invalid')).toBe(false);
-});
-
-test('new Reddit navigation discards the previous post and detects the next post', async ({ page }) => {
-  const { stream } = await install(page, { respond: url => listing([
-    comment(url.pathname.includes('def456') ? 'newpost' : 'firstpost', 100, 'Comment', [],
-      url.pathname.includes('def456') ? 't3_def456' : 't3_abc123',
-      { link_id: url.pathname.includes('def456') ? 't3_def456' : 't3_abc123' }),
-  ], 1, url.pathname.includes('def456') ? 'def456' : 'abc123') });
-  await expect.poll(() => ids(stream)).toEqual(['t1_firstpost']);
+test('mobile reveal runs once and delayed lazy loaders finish before sorting', async ({ page }) => {
+  const { requests } = await install(page, 'new', comment('new', 'parent', 100) + '<button id="native-reveal">View more comments</button>', () => comment('new', 'lazy', 900));
   await page.evaluate(() => {
-    history.pushState({}, '', '/r/test/comments/def456/next_post/');
-    document.querySelector('h1').textContent = 'A different post';
-    window.dispatchEvent(new PopStateEvent('popstate'));
+    document.querySelector('shreddit-comments-sort-dropdown').remove();
+    const post = document.querySelector('shreddit-post');
+    post.id = post.getAttribute('post-id');
+    post.removeAttribute('post-id');
+    document.getElementById('reddit-comment-stream-host').remove();
   });
-  await expect(stream).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Comment stream', exact: true })).toBeVisible();
+  expect(await page.locator('#reddit-comment-stream-host').evaluate(node => node.previousElementSibling.localName)).toBe('shreddit-post');
+  await page.evaluate(fragment => {
+    window.reveals = 0;
+    document.querySelector('#native-reveal').addEventListener('click', () => {
+      window.reveals++;
+      const root = document.querySelector('[data-comment-section-anchor]');
+      root.insertAdjacentHTML('beforeend', fragment);
+      setTimeout(() => {
+        const lazy = document.createElement('faceplate-partial');
+        lazy.setAttribute('src', '/svc/shreddit/more-comments/lazy');
+        lazy.setAttribute('loading', 'lazy');
+        // Initially outside the viewport, like a native lazy cursor page.
+        lazy.style.cssText = 'display:block;margin-top:2000px;height:10px';
+        root.append(lazy);
+        const observer = new IntersectionObserver(async entries => {
+          if (!entries.some(entry => entry.isIntersecting)) return;
+          observer.disconnect();
+          const response = await fetch('/native-more/lazy');
+          const template = document.createElement('template');
+          template.innerHTML = await response.text();
+          lazy.replaceWith(template.content);
+        });
+        observer.observe(lazy);
+      }, 900);
+    });
+  }, comment('new', 'revealed', 300));
   await page.getByRole('button', { name: 'Comment stream', exact: true }).click();
-  await expect.poll(() => ids(page.getByRole('dialog', { name: 'Reddit comment stream', exact: true }))).toEqual(['t1_newpost']);
-  await page.evaluate(() => {
-    history.pushState({}, '', '/r/test/');
-    window.dispatchEvent(new PopStateEvent('popstate'));
-  });
-  await expect(page.getByRole('button', { name: 'Comment stream', exact: true })).not.toBeVisible();
+  await expect.poll(() => ids(page)).toEqual(['t1_lazy', 't1_revealed', 't1_parent']);
+  expect(await page.evaluate(() => window.reveals)).toBe(1);
+  expect(requests.filter(request => request.path === '/native-more/lazy')).toHaveLength(1);
+  await expect(page.getByRole('status')).toContainText('Partial'); // The persistent native reveal is reported.
+});
+
+test('keeps native duplicate nodes restorable and the stream ahead of interspersed content', async ({ page }) => {
+  await install(page, 'new', comment('new', 'parent', 100) + '<aside id="between">Native interspersed content</aside>' + comment('new', 'parent', 100));
+  await page.evaluate(() => window.originals = [...document.querySelectorAll('shreddit-comment')].map(node => ({ node, next: node.nextSibling })));
+  await page.getByRole('button', { name: 'Comment stream', exact: true }).click();
+  await expect(page.locator('[data-rcs-flat-comment]')).toHaveCount(2);
+  expect(await page.locator('#between').evaluate(node => [...node.parentElement.children].filter(n => n.matches('aside,shreddit-comment')).map(n => n.localName))).toEqual(['shreddit-comment','shreddit-comment','aside']);
+  await page.getByRole('button', { name: 'Normal view', exact: true }).click();
+  expect(await page.evaluate(() => window.originals.every(({ node, next }) => node.nextSibling === next))).toBe(true);
+  await expect(page.locator('[data-rcs-flat-comment]')).toHaveCount(0);
+});
+
+test('unexpandable and blocked branches remain visibly partial without navigating', async ({ page }) => {
+  await install(page, 'new', comment('new', 'parent', 100, continuation('new', 'parent')), () => ({ status: 403 }), { total: 20 });
+  await page.getByRole('button', { name: 'Comment stream', exact: true }).click();
+  await expect.poll(()=>ids(page)).toEqual(['t1_parent']);
+  await expect(page.getByRole('status')).toContainText('Partial');
+  await expect(page.locator('#reddit-comment-stream-host')).toContainText('HTTP 403');
+  await expect(page.locator('#reddit-comment-stream-host')).toContainText('20 comments');
+});
+
+test('repeated loaders terminate and unknown times appear last', async ({ page }) => {
+  const body = comment('new', 'parent', 100, more('new', 'loop')) + comment('new', 'unknown', 200).replace(/created="[^"]+"/, '').replace(/datetime="[^"]+"/, '');
+  const {requests}=await install(page, 'new', body, ()=>more('new','loop'));
+  await page.getByRole('button', {name:'Comment stream',exact:true}).click();
+  await expect.poll(()=>ids(page)).toEqual(['t1_parent','t1_unknown']);
+  await expect(page.getByRole('status')).toContainText('1 without timestamps');
+  expect(requests.filter(x=>x.path.startsWith('/native-more/')).length).toBe(1);
+});
+
+test('a native tree rerender and SPA navigation safely discard the old stream', async ({page})=>{
+  await install(page,'new',comment('new','first',100));
+  await page.getByRole('button',{name:'Comment stream',exact:true}).click();
+  await expect.poll(()=>ids(page)).toEqual(['t1_first']);
+  await page.evaluate(html=>{
+    const template=document.createElement('template');template.innerHTML=html;
+    document.querySelector('shreddit-comment-tree').replaceWith(template.content.querySelector('shreddit-comment-tree'));
+  },pageHTML('new',comment('new','replacement',300)));
+  await expect(page.getByRole('button',{name:'Comment stream',exact:true})).toBeEnabled();
+  await expect(page.locator('[data-rcs-flat-comment]')).toHaveCount(0);
+  await expect(nodeFor(page,'first')).toHaveCount(0);
+  await page.evaluate(()=>{history.pushState({},'','/r/test/');window.dispatchEvent(new PopStateEvent('popstate'));});
+  await expect(page.locator('#reddit-comment-stream-host')).toHaveCount(0);
+});
+
+test('initialization waits for native post chrome and restores a removed toolbar', async ({page})=>{
+  await page.route('**/*',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><meta name="viewport" content="width=device-width"><main>Loading post</main>'}));
+  await page.addInitScript({path:scriptPath});
+  await page.goto('https://www.reddit.com/r/Seattle/comments/1y0m3pi/i_love_these_mushrooms/');
+  await expect(page.locator('#reddit-comment-stream-host')).toHaveCount(0);
+  await page.evaluate(html=>{const t=document.createElement('template');t.innerHTML=html;document.body.replaceChildren(t.content.querySelector('main'));},pageHTML('new',comment('new','first',100,'',{post:'1y0m3pi'}),{post:'1y0m3pi'}));
+  const launcher=page.getByRole('button',{name:'Comment stream',exact:true});
+  await expect(launcher).toBeVisible();
+  await page.evaluate(()=>document.getElementById('reddit-comment-stream-host').remove());
+  await expect(launcher).toBeVisible();
+  await page.evaluate(await readFile(scriptPath,'utf8'));
+  await expect(launcher).toHaveCount(1);
 });
