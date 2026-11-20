@@ -10,7 +10,6 @@ import styles from './styles.css';
   const shadow = host.attachShadow({ mode: 'open' });
   const style = element('style', styles);
   shadow.append(style);
-  document.documentElement.append(host);
 
   const button = (text, action, className) => {
     const node = element('button', text, className);
@@ -26,6 +25,9 @@ import styles from './styles.css';
   let lastURL = '';
 
   function checkRoute() {
+    // Safari can inject while a navigation is still replacing the document.
+    // Keep initialization alive until there is a root to mount into.
+    if (!document.documentElement) return;
     if (location.href === lastURL && host.isConnected) return;
     lastURL = location.href;
     const next = parsePostURL(location.href);
@@ -276,5 +278,6 @@ import styles from './styles.css';
   // A cheap URL check also covers pushState, back/forward, and modal post routes.
   window.addEventListener('popstate', checkRoute);
   window.addEventListener('pageshow', checkRoute);
+  document.addEventListener('DOMContentLoaded', checkRoute, { once: true });
   window.setInterval(checkRoute, 800);
 })();

@@ -25,7 +25,8 @@ for (const [file, name, hosts] of variants) {
     `// @downloadURL  ${base}${file}.user.js`,
     ...hosts.map(host => `// @match        https://${host}/*`),
     '// @grant        none',
-    '// @run-at       document-idle',
+    '// @inject-into  content',
+    '// @run-at       document-end',
     '// @noframes',
     '// ==/UserScript==',
   ].join('\n');

@@ -1,8 +1,10 @@
 import { test, expect } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
 
 const scriptPath = fileURLToPath(new URL('../dist/reddit-comment-stream.user.js', import.meta.url));
 const postPath = '/r/test/comments/abc123/a_post/';
+const reportedURL = 'https://www.reddit.com/r/Seattle/comments/1y0m3pi/i_love_these_mushrooms/';
 
 function comment(id, created, body, replies = [], parent = 't3_abc123', extra = {}) {
   return {
@@ -61,6 +63,68 @@ async function install(page, { host = 'www.reddit.com', respond } = {}) {
 }
 
 const ids = locator => locator.locator('article[data-comment-id]').evaluateAll(nodes => nodes.map(node => node.dataset.commentId));
+
+test('starts at DOM readiness without waiting for slow page resources', async ({ page }) => {
+  const code = await readFile(scriptPath, 'utf8');
+  const runAt = code.match(/^\/\/ @run-at\s+(\S+)/m)?.[1];
+  let release;
+  const resource = new Promise(resolve => { release = resolve; });
+  await page.route('**/*', async route => {
+    if (route.request().resourceType() === 'document') {
+      await route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width"><title>Thread</title><img src="/slow-image.png">' });
+    } else {
+      await resource;
+      await route.abort().catch(() => {});
+    }
+  });
+  // Model the manager's metadata-based lifecycle dispatch. This is not a test
+  // of the installed iOS extension; it catches scripts waiting for window load.
+  await page.addInitScript(({ code, runAt }) => {
+    const event = runAt === 'document-end' ? 'DOMContentLoaded' : 'load';
+    window.addEventListener(event, () => (0, eval)(code), { once: true });
+  }, { code, runAt });
+  try {
+    await page.goto(reportedURL, { waitUntil: 'domcontentloaded' });
+    expect(await page.evaluate(() => document.readyState)).toBe('interactive');
+    const launcher = page.getByRole('button', { name: 'Comment stream', exact: true });
+    await expect(launcher).toBeVisible();
+    await launcher.click();
+    await expect(page.getByRole('dialog', { name: 'Reddit comment stream', exact: true })).toBeVisible();
+  } finally { release(); }
+});
+
+test('recovers when injected during document replacement and restores a removed host', async ({ page }) => {
+  await page.route('**/*', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width"><title>Thread</title><main>Thread</main>' }));
+  await page.goto(reportedURL);
+  const code = await readFile(scriptPath, 'utf8');
+  await page.evaluate(code => {
+    const root = document.documentElement;
+    root.remove();
+    try { (0, eval)(code); } finally { document.append(root); }
+  }, code);
+  const launcher = page.getByRole('button', { name: 'Comment stream', exact: true });
+  await expect(launcher).toBeVisible();
+  await page.evaluate(() => document.getElementById('reddit-comment-stream-host').remove());
+  await expect(launcher).toBeVisible();
+  await page.evaluate(code);
+  await expect(launcher).toHaveCount(1);
+});
+
+test('uses content-context startup on a page that rejects inline script tags', async ({ page }) => {
+  await page.route('**/*', route => route.fulfill({
+    contentType: 'text/html',
+    headers: { 'Content-Security-Policy': "script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'" },
+    body: '<!doctype html><meta name="viewport" content="width=device-width"><title>Thread</title><main>Thread</main>',
+  }));
+  await page.goto(reportedURL);
+  const code = await readFile(scriptPath, 'utf8');
+  const context = code.match(/^\/\/ @inject-into\s+(\S+)/m)?.[1];
+  // Remote evaluation supplies the test's privileged entry point, analogous
+  // to a manager's isolated content world. Physical Safari injection is separate.
+  if (context === 'content') await page.evaluate(code);
+  else await page.addScriptTag({ content: code }).catch(() => {});
+  await expect(page.getByRole('button', { name: 'Comment stream', exact: true })).toBeVisible();
+});
 
 for (const host of ['old.reddit.com', 'www.reddit.com']) {
   test(`flattens nested comments by creation time on ${host}`, async ({ page }, testInfo) => {

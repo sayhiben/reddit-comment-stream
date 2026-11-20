@@ -31,6 +31,13 @@ Before reporting a release as verified on a real device, record the browser, ope
 - Tests ran on Windows with the pinned Playwright dependency. They inject the built userscript into fabricated Reddit pages; they do not install Tampermonkey or Userscripts.
 - An unauthenticated request to live Reddit's JSON endpoint returned HTTP 403 from the development environment. Authenticated live collection, userscript-manager injection, and physical iOS/Android installation remain unverified.
 
+### Version 1.0.1 startup update — 2026-11-20
+
+- **24 Node tests and 65 browser tests passed.** Added startup coverage for the reported Seattle post URL, delayed page resources, temporary document replacement, removed UI hosts, and content-context entry on pages that reject inline script tags.
+- Explicit `@inject-into content` avoids relying on Userscripts' automatic page-to-content fallback. `@run-at document-end` starts at DOM readiness instead of waiting for all page resources. The app waits for a document root before mounting.
+- The startup tests model manager dispatch using the built metadata and browser automation. They do not certify the installed iOS extension. The reported live page also displayed the launcher when the script was manually injected in desktop Chromium and WebKit; that is separate from a physical iPhone test.
+- After a file is copied or replaced, Userscripts requires opening its popup once to rescan the directory, followed by reloading the page. See its [directory notes](https://github.com/quoid/userscripts#scripts-directory) and [injection metadata](https://github.com/quoid/userscripts#metadata).
+
 ## Manual release checklist
 
 Run these checks on old Reddit and current Reddit in each intended browser/manager combination:

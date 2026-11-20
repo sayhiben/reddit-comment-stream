@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Comment Stream
 // @namespace    https://github.com/sayhiben/reddit-comment-stream
-// @version      1.0.0
+// @version      1.0.1
 // @description  Load available Reddit replies, then read every level newest first with threaded context.
 // @author       sayhiben
 // @license      MIT
@@ -17,7 +17,8 @@
 // @match        https://np.reddit.com/*
 // @match        https://m.reddit.com/*
 // @grant        none
-// @run-at       document-idle
+// @inject-into  content
+// @run-at       document-end
 // @noframes
 // ==/UserScript==
 
@@ -458,7 +459,6 @@
     const shadow = host.attachShadow({ mode: "open" });
     const style = element("style", styles_default);
     shadow.append(style);
-    document.documentElement.append(host);
     const button = (text, action, className) => {
       const node = element("button", text, className);
       node.type = "button";
@@ -472,6 +472,7 @@
     let session = null;
     let lastURL = "";
     function checkRoute() {
+      if (!document.documentElement) return;
       if (location.href === lastURL && host.isConnected) return;
       lastURL = location.href;
       const next = parsePostURL(location.href);
@@ -739,6 +740,7 @@ ${item.body}`.toLowerCase().includes(query)) : snapshot.comments;
     checkRoute();
     window.addEventListener("popstate", checkRoute);
     window.addEventListener("pageshow", checkRoute);
+    document.addEventListener("DOMContentLoaded", checkRoute, { once: true });
     window.setInterval(checkRoute, 800);
   })();
 })();

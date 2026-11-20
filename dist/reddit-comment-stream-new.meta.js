@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Comment Stream — New Reddit
 // @namespace    https://github.com/sayhiben/reddit-comment-stream
-// @version      1.0.0
+// @version      1.0.1
 // @description  Load available Reddit replies, then read every level newest first with threaded context.
 // @author       sayhiben
 // @license      MIT
@@ -15,6 +15,7 @@
 // @match        https://sh.reddit.com/*
 // @match        https://m.reddit.com/*
 // @grant        none
-// @run-at       document-idle
+// @inject-into  content
+// @run-at       document-end
 // @noframes
 // ==/UserScript==

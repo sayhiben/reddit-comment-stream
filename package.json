@@ -1,6 +1,6 @@
 {
   "name": "reddit-comment-stream",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "A newest-first, context-preserving Reddit comment reader for userscript managers.",
   "type": "module",

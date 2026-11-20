@@ -33,11 +33,16 @@ Requires iOS / iPadOS 15.4 or newer for the reading view's modal dialogs.
 1. Install [Userscripts](https://github.com/quoid/userscripts#installation), open the app, and note or choose its **Userscripts Directory**.
 2. Open **[Download ZIP for iOS](https://github.com/sayhiben/reddit-comment-stream/releases/latest/download/reddit-comment-stream-ios.zip)** in **Safari** and confirm **Download** if prompted. If you are viewing this inside another app, open the link in Safari first.
 3. Open **Files → Browse → Downloads** and tap `reddit-comment-stream-ios.zip` to extract it. Open the extracted folder, touch and hold `reddit-comment-stream.user.js`, choose **Move**, and put it directly in the directory selected in Userscripts. Keep the `.user.js` filename. The ZIP contains only the universal script, which covers both Reddit layouts.
-4. Enable the **Userscripts** Safari extension, allow it on Reddit, and reload a Reddit post in Safari. Tap **Comment stream**. Use the web page, not the Reddit app.
+4. Enable the **Userscripts** Safari extension and allow it on Reddit. On the Reddit page, open **Safari → Extensions → Userscripts** and let the popup finish loading. **This step is required after copying or replacing a file:** it makes Userscripts rescan its folder. Confirm **Reddit Comment Stream** is listed and enabled, then close the popup and reload the Reddit page.
+5. Look for the teal **Comment stream** button at the bottom-right of the page. Use Safari itself, not the Reddit app or another app's embedded browser.
 
 Apple documents [finding Safari downloads](https://support.apple.com/102440), [extracting ZIP files](https://support.apple.com/102532), and [moving files](https://support.apple.com/guide/iphone/files-basics-iphe9d46e90f/ios).
 
 **Alternative without using Files:** open the [raw `.user.js` install link](https://raw.githubusercontent.com/sayhiben/reddit-comment-stream/main/dist/reddit-comment-stream.user.js) in Safari. Seeing script source is normal. While that page is open, open Safari's **Extensions** menu, choose **Userscripts**, and use its installation prompt; allow access to that page if requested. This flow and the directory-based method are documented by [Userscripts](https://github.com/quoid/userscripts#usage).
+
+**Installed but no button?** Open the Userscripts popup on the Reddit page first, confirm the script and global injection switch are enabled, grant website access if prompted, then reload. If the script is absent from the popup's all-scripts folder view, check that the `.user.js` file is directly inside the chosen directory and is downloaded locally. Userscripts documents the required popup rescan in its [Scripts Directory notes](https://github.com/quoid/userscripts#scripts-directory). Version 1.0.1 also explicitly uses content-context injection and starts at DOM readiness to avoid waiting for every resource on the page to finish loading.
+
+To update a manually installed copy, download the latest ZIP, replace the existing `reddit-comment-stream.user.js` in the same folder (avoid keeping a numbered duplicate), open the Userscripts popup once, and reload Reddit.
 
 ### Android
 
